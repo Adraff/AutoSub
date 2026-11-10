@@ -1,0 +1,9 @@
+# Archivos generados (los instaladores se publican en GitHub Releases)
+build/
+dist/
+
+# Configuración local
+.claude/
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoSub</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ ASISTENTE DE API KEY (primer uso) ============ -->
+  <div id="wizard" class="overlay hidden">
+    <div class="wizard-card">
+      <div class="wizard-head">
+        <div class="logo">AS</div>
+        <div>
+          <h1>Configura tu API key</h1>
+          <p class="muted">Gratis, con tu cuenta de Google.</p>
+        </div>
+      </div>
+
+      <div class="wizard-step" data-step="1">
+        <h2><span class="num">1</span>¿Qué es?</h2>
+        <p>AutoSub usa <b>Google Gemini</b> para transcribir el audio. Cada persona usa <b>su propia clave gratuita</b> (con límites diarios).</p>
+        <p class="muted">La clave se guarda <b>cifrada</b> con tu usuario del sistema: otras cuentas del ordenador no pueden leerla. Solo se envía a Google.</p>
+      </div>
+
+      <div class="wizard-step hidden" data-step="2">
+        <h2><span class="num">2</span>Abre Google AI Studio</h2>
+        <p>Inicia sesión con tu cuenta de Google en la página de claves.</p>
+        <button class="btn primary" id="wzOpenStudio">Abrir aistudio.google.com/apikey ↗</button>
+        <p class="muted">Si es la primera vez, acepta las condiciones de AI Studio.</p>
+      </div>
+
+      <div class="wizard-step hidden" data-step="3">
+        <h2><span class="num">3</span>Crea la clave</h2>
+        <ol class="steps">
+          <li>Pulsa <b>"Create API key"</b>.</li>
+          <li>Si te lo pide, elige el proyecto que viene por defecto.</li>
+          <li>Copia la clave. Empieza por <code>AIza…</code></li>
+        </ol>
+        <p class="muted">No hace falta tarjeta ni facturación.</p>
+      </div>
+
+      <div class="wizard-step hidden" data-step="4">
+        <h2><span class="num">4</span>Pégala aquí</h2>
+        <div class="row">
+          <input type="password" id="wzKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
+          <button class="btn icon" id="wzToggle" title="Mostrar/ocultar">👁</button>
+        </div>
+        <button class="btn primary full" id="wzValidate">Comprobar y guardar</button>
+        <div id="wzStatus" class="status"></div>
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn ghost" id="wzBack">Atrás</button>
+        <div class="dots"><span></span><span></span><span></span><span></span></div>
+        <button class="btn" id="wzNext">Siguiente</button>
+      </div>
+      <button class="btn ghost skip" id="wzSkip">Más tarde</button>
+    </div>
+  </div>
+
+  <!-- ============ PESTAÑAS ============ -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="gen">Generar</button>
+    <button class="tab" data-tab="edit">Editar</button>
+    <button class="tab" data-tab="export">Exportar</button>
+    <button class="tab" data-tab="log">Log<i id="logDot" class="dot hidden"></i></button>
+    <button class="tab cfg" data-tab="settings" title="Ajustes y API key">⚙<i id="keyDot" class="dot warn"></i></button>
+  </nav>
+
+  <main>
+    <!-- ============ GENERAR ============ -->
+    <section id="tab-gen" class="panel active">
+      <div id="compInfo" class="info">Selecciona una composición…</div>
+
+      <div class="grid">
+        <label class="f"><span>Audio</span>
+          <select id="audioSource" title="De dónde se toma el audio">
+            <option value="comp">Composición</option>
+            <option value="layer">Capa seleccionada</option>
+          </select>
+        </label>
+        <label class="f"><span>Idioma</span>
+          <select id="language">
+            <option value="auto">Automático</option>
+            <option value="español">Español</option>
+            <option value="inglés">Inglés</option>
+            <option value="portugués">Portugués</option>
+            <option value="francés">Francés</option>
+            <option value="italiano">Italiano</option>
+            <option value="alemán">Alemán</option>
+            <option value="catalán">Catalán</option>
+          </select>
+        </label>
+        <label class="f"><span>Ancho caja (px)</span>
+          <div class="inline">
+            <input type="number" id="boxWidth" min="50" step="10" value="1500">
+            <button class="btn mini" id="boxWidth80" title="80% del ancho de la composición">80%</button>
+          </div>
+        </label>
+        <div class="f"><span>Líneas máx.</span>
+          <div class="seg" id="maxLines">
+            <button data-v="1">1</button><button data-v="2" class="on">2</button><button data-v="3">3</button><button data-v="4">4</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="checks">
+        <label title="Si está desactivado, el subtítulo desaparece cuando nadie habla"><input type="checkbox" id="keepSilence"> Mantener en silencios</label>
+        <label><input type="checkbox" id="bgBox"> Caja de fondo</label>
+      </div>
+
+      <details id="adv">
+        <summary>Avanzado</summary>
+        <div class="grid">
+          <label class="f"><span>Silencio que corta (s)</span><input type="number" id="gapBreak" min="0.1" step="0.1" value="0.5"></label>
+          <label class="f"><span>Duración máx. (s)</span><input type="number" id="maxDuration" min="1" step="0.5" value="5"></label>
+          <label class="f"><span>Letra inicial (px)</span><input type="number" id="fontSize" min="8" step="1" value="80"></label>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="breakPunct" checked> Cortar tras . ? !</label>
+          <label title="Analiza el audio para encajar cada frase donde realmente se oye la voz"><input type="checkbox" id="vad" checked> Ajuste fino con el audio</label>
+        </div>
+      </details>
+
+      <div class="actionbar">
+        <div class="msel" id="modelSel">
+          <button class="msel-btn" id="modelBtn" title="Modelo de IA">
+            <i class="mdot"></i><span class="mname" id="modelName">—</span><span class="mtag" id="modelTag"></span><span class="caret">▾</span>
+          </button>
+          <div class="msel-list hidden" id="modelList"></div>
+        </div>
+        <button class="btn primary" id="btnGenerate">✦ Generar</button>
+        <button class="btn icon" id="btnReflow" title="Reorganizar con los ajustes y el estilo actuales (sin volver a llamar a la IA)">↻</button>
+      </div>
+
+      <div class="quota" id="quota">
+        <div class="qbar"><div class="qfill" id="qFill"></div></div>
+        <span class="qtext" id="qText">—</span>
+      </div>
+
+      <div id="job" class="job hidden">
+        <div class="job-row"><span id="jobText"></span><span id="jobPct"></span></div>
+        <div class="progress"><div class="bar" id="jobBar"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ EDITAR ============ -->
+    <section id="tab-edit" class="panel">
+      <div class="toolbar">
+        <input type="search" id="subSearch" placeholder="Buscar…">
+        <button class="btn icon" id="btnLoadSubs" title="Recargar desde la capa">⟳</button>
+        <button class="btn primary" id="btnSaveSubs">Guardar</button>
+      </div>
+      <div id="subList" class="sublist"><p class="muted">Sin subtítulos cargados.</p></div>
+      <p class="hint">Estilo: cambia la fuente/tamaño de la capa en el panel Carácter y pulsa ↻ en Generar. Usa <code>|</code> en un marcador para saltar de línea.</p>
+    </section>
+
+    <!-- ============ EXPORTAR ============ -->
+    <section id="tab-export" class="panel">
+      <div class="grid">
+        <label class="f"><span>Formato</span>
+          <select id="exportFormat">
+            <option value="srt">SRT</option>
+            <option value="vtt">WebVTT</option>
+            <option value="txt">Texto (.txt)</option>
+            <option value="json">JSON (por palabra)</option>
+          </select>
+        </label>
+        <label class="f"><span>Tiempos desde</span>
+          <select id="exportOrigin">
+            <option value="comp">Inicio comp.</option>
+            <option value="workarea">Área de trabajo</option>
+          </select>
+        </label>
+      </div>
+      <div class="checks"><label><input type="checkbox" id="exportOneLine"> Unir líneas en una</label></div>
+      <button class="btn primary full" id="btnExport">Exportar archivo…</button>
+      <div id="exportStatus" class="status"></div>
+    </section>
+
+    <!-- ============ LOG ============ -->
+    <section id="tab-log" class="panel">
+      <div class="toolbar">
+        <span class="muted grow">Registro de todo lo que hace AutoSub</span>
+        <button class="btn" id="logCopy">Copiar</button>
+        <button class="btn ghost" id="logClear">Limpiar</button>
+      </div>
+      <div id="logList" class="log"><p class="muted">Todavía no hay actividad.</p></div>
+    </section>
+
+    <!-- ============ AJUSTES ============ -->
+    <section id="tab-settings" class="panel">
+      <div class="f"><span>API key de Gemini</span>
+        <div class="row">
+          <input type="password" id="setKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
+          <button class="btn icon" id="setToggle" title="Mostrar/ocultar">👁</button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="setSaveKey">Guardar</button>
+        <button class="btn" id="setWizard">Guía</button>
+        <button class="btn" id="refreshModels" title="Actualizar la lista de modelos">Modelos ⟳</button>
+        <button class="btn ghost" id="setDeleteKey">Borrar</button>
+      </div>
+      <div id="setStatus" class="status"></div>
+      <p class="hint" id="keyInfo"></p>
+
+      <details open>
+        <summary>Cuota diaria</summary>
+        <div class="grid">
+          <label class="f"><span>Peticiones/día (<span id="limModel">modelo</span>)</span>
+            <input type="number" id="limitRpd" min="1" step="1">
+          </label>
+          <div class="f"><span>&nbsp;</span><button class="btn" id="openLimits">Ver límites reales ↗</button></div>
+        </div>
+        <p class="hint">Google no permite consultar la cuota restante, así que AutoSub cuenta tus peticiones en este equipo y se reinicia a medianoche (hora del Pacífico). El límite se corrige solo si Google avisa de que se agotó.</p>
+      </details>
+
+      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.2.0</p>
+    </section>
+  </main>
+
+  <script src="js/cep.js"></script>
+  <script src="js/secret.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/quota.js"></script>
+  <script src="js/gemini.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/segment.js"></script>
+  <script src="js/exporters.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
