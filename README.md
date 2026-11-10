@@ -1,120 +1,124 @@
-# AutoSub: subtítulos automáticos con IA para After Effects
+# AutoSub: AI-powered automatic subtitles for After Effects
 
-**AutoSub** es un panel gratuito y de código abierto para **Adobe After Effects**. Escucha el audio de tu composición, lo transcribe con la inteligencia artificial **Google Gemini** (usando tu propia API key gratuita) y crea los subtítulos sincronizados directamente en la línea de tiempo.
+**English** · [Español](README.es.md)
 
-> 🆓 **Libre y gratuito.** Puedes usarlo, compartirlo, modificarlo y mejorarlo sin pagar nada (licencia MIT). Solo necesitas una API key gratuita de Google Gemini, que cada persona crea en un minuto con su cuenta de Google.
+**AutoSub** is a free, open-source panel for **Adobe After Effects**. It listens to your composition's audio, transcribes it with **Google Gemini** AI (using your own free API key) and creates synced subtitles directly on your timeline.
+
+> 🆓 **Free and open.** You can use, share, modify and improve it at no cost (GPL v3 license). All you need is a free Google Gemini API key, which anyone can create in a minute with a Google account.
 >
-> 🤖 **Hecho íntegramente con [Claude Code](https://claude.com/claude-code)**: todo el código, el instalador y esta documentación se escribieron con Claude Code, el asistente de programación de Anthropic.
+> 🤖 **Built entirely with [Claude Code](https://claude.com/claude-code)**: all the code, the installer and this documentation were written with Claude Code, Anthropic's AI coding assistant.
 
 ---
 
-## ✨ Qué hace
+## ✨ Features
 
-- **Transcripción automática** del audio de la composición (o del archivo de una capa), con tiempos por palabra.
-- **Ajuste fino de la sincronización:** analiza el audio real para colocar cada frase en el momento exacto en que se oye y respetar los silencios.
-- **Todos los subtítulos se controlan a la vez:** viven en una sola capa de texto. Si cambias la fuente, el tamaño, el color o el trazo, el cambio se aplica a todos.
-- **Caja de texto configurable:** ancho máximo en píxeles (medido con la tipografía real) y de 1 a 4 líneas por subtítulo.
-- **Silencios:** puedes elegir si el subtítulo sigue en pantalla mientras nadie habla o desaparece.
-- **Desfase global:** con un control adelantas o retrasas todos los subtítulos.
-- **Efectos:** caja de fondo opcional que se ajusta al texto, fundido y efecto "pop".
-- **Editor integrado:** corrige el texto y los tiempos de cada subtítulo.
-- **Exportación** a **SRT**, **WebVTT**, **TXT** o **JSON** (con tiempos por palabra).
-- **Selector de modelos:** los gratuitos aparecen en verde y el más eficiente va marcado con ★. Los de pago o los que gastan tokens de más aparecen en gris.
-- **Barra de cuota:** muestra cuántas peticiones gratuitas te quedan hoy y cuánto falta para que se recarguen.
-- **API key cifrada:** se guarda cifrada con tu cuenta del sistema (DPAPI en Windows, Llavero en macOS).
-- **Pestaña Log:** registro detallado de todo lo que hace el panel, para revisar o reportar problemas.
-- **Instalador propio**, sin herramientas de terceros.
+- **Automatic transcription** of the composition's audio (or of a layer's source file), with per-word timing.
+- **Fine sync adjustment:** analyzes the real audio to place each phrase exactly where it is heard and to respect silences.
+- **Control every subtitle at once:** all subtitles live in a single text layer. Change the font, size, color or stroke and it applies to all of them.
+- **Configurable text box:** maximum width in pixels (measured with the real typeface) and 1 to 4 lines per subtitle.
+- **Silences:** choose whether a subtitle stays on screen while nobody is speaking or disappears.
+- **Global offset:** one control shifts every subtitle earlier or later.
+- **Effects:** optional background box that fits the text, fade and "pop" animation.
+- **Built-in editor:** fix the text and timing of each subtitle.
+- **Export** to **SRT**, **WebVTT**, **TXT** or **JSON** (with per-word timing).
+- **Model picker:** free models are shown in green and the most efficient one is marked with ★. Paid models, or models that waste tokens, are shown in grey.
+- **Quota bar:** shows how many free requests you have left today and when they refill.
+- **Encrypted API key:** stored encrypted with your system account (DPAPI on Windows, Keychain on macOS).
+- **Log tab:** a detailed record of everything the panel does, for checking or reporting problems.
+- **Custom installer** with no third-party tools.
 
-## 📥 Instalación
+> The panel interface is currently in Spanish.
+
+## 📥 Installation
 
 ### Windows
-1. Descarga **`AutoSub-Installer.exe`** desde la sección [**Releases**](../../releases/latest).
-2. Cierra After Effects y ejecuta el instalador. Pulsa **Instalar**.
-3. Abre After Effects y ve a **Ventana > Extensiones > AutoSub - Subtítulos IA**.
+1. Download **`AutoSub-Installer.exe`** from [**Releases**](../../releases/latest).
+2. Close After Effects and run the installer. Click **Instalar** (Install).
+3. Open After Effects and go to **Window > Extensions > AutoSub - Subtítulos IA**.
 
-> Windows puede mostrar un aviso de SmartScreen porque el instalador no está firmado. Pulsa *Más información > Ejecutar de todas formas*.
+> Windows may show a SmartScreen warning because the installer is not signed. Click *More info > Run anyway*.
 
-El instalador copia el panel en `%APPDATA%\Adobe\CEP\extensions\com.autosub.ae` (solo para tu usuario, sin permisos de administrador). También activa `PlayerDebugMode`, que es lo que permite a After Effects cargar paneles sin firmar. Para desinstalar, vuelve a abrirlo y pulsa **Desinstalar**.
+The installer copies the panel to `%APPDATA%\Adobe\CEP\extensions\com.autosub.ae` (for your user only, no administrator rights needed). It also enables `PlayerDebugMode`, which lets After Effects load unsigned panels. To uninstall, run it again and click **Desinstalar** (Uninstall).
 
 ### macOS
-1. Descarga **`AutoSub-macOS.zip`** desde [**Releases**](../../releases/latest) y descomprímelo.
-2. Haz doble clic en `Instalar-AutoSub-mac.command`. Si macOS lo bloquea, haz clic derecho > Abrir.
+1. Download **`AutoSub-macOS.zip`** from [**Releases**](../../releases/latest) and unzip it.
+2. Double-click `Instalar-AutoSub-mac.command`. If macOS blocks it, right-click > Open.
 
-### Requisitos
-- After Effects 2019 (v16) o posterior. Se ha probado en 2025 y 2026.
-- Conexión a internet y una API key gratuita de Google Gemini.
+### Requirements
+- After Effects 2019 (v16) or later. Tested on 2025 and 2026.
+- An internet connection and a free Google Gemini API key.
 
-## 🔑 API key gratuita de Gemini
+## 🔑 Free Gemini API key
 
-La primera vez que abres el panel aparece una guía paso a paso:
-1. Entra en [aistudio.google.com/apikey](https://aistudio.google.com/apikey) con tu cuenta de Google.
-2. Pulsa **Create API key** y copia la clave (empieza por `AIza…`).
-3. Pégala en el panel. AutoSub la comprueba con Google y la guarda **cifrada**.
+The first time you open the panel, a step-by-step guide appears:
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with your Google account.
+2. Click **Create API key** and copy the key (it starts with `AIza…`).
+3. Paste it into the panel. AutoSub checks it with Google and stores it **encrypted**.
 
-No hace falta tarjeta de crédito. El nivel gratuito tiene un límite de peticiones al día, que el panel te muestra en la barra de cuota.
+No credit card is needed. The free tier has a daily request limit, which the panel shows in the quota bar.
 
-## 🎬 Uso
+## 🎬 Usage
 
-1. Abre tu composición y ajusta el **área de trabajo** al tramo que quieras subtitular.
-2. En la pestaña **Generar**, elige idioma, ancho de caja, número de líneas y demás opciones.
-3. Elige un modelo verde (se recomienda el ★) y pulsa **✦ Generar**.
-4. Para cambiar el estilo, selecciona la capa `AutoSub - Subtitulos` y usa el panel **Carácter**. Después pulsa **↻** para recalcular los saltos de línea.
-5. Exporta desde la pestaña **Exportar**.
+1. Open your composition and set the **work area** to the part you want to subtitle.
+2. In the **Generar** (Generate) tab, choose the language, box width, number of lines and other options.
+3. Pick a green model (★ is recommended) and click **✦ Generar**.
+4. To change the style, select the `AutoSub - Subtitulos` layer and use the **Character** panel. Then click **↻** to recalculate the line breaks.
+5. Export from the **Exportar** (Export) tab.
 
-### Controles de la capa (panel Controles de efectos)
-| Control | Para qué sirve |
+### Layer controls (Effect Controls panel)
+| Control | What it does |
 |---|---|
-| Desfase (fotogramas) | Adelanta (−) o retrasa (+) todos los subtítulos |
-| Fundido (fotogramas) | Fundido de entrada y salida de cada subtítulo |
-| Pop (%) | Efecto de escala al aparecer |
-| Fondo: Opacidad / Color / Margen / Redondez | Caja de fondo (si la activaste) |
+| Desfase (fotogramas) | Shifts every subtitle earlier (−) or later (+), in frames |
+| Fundido (fotogramas) | Fade in and out of each subtitle, in frames |
+| Pop (%) | Scale animation when a subtitle appears |
+| Fondo: Opacidad / Color / Margen / Redondez | Background box opacity, color, padding and roundness (if enabled) |
 
-También puedes editar en la línea de tiempo: cada subtítulo es un marcador de la capa. Arrastra un marcador para cambiar sus tiempos o haz doble clic para cambiar el texto. Usa `|` para forzar un salto de línea.
+You can also edit on the timeline: each subtitle is a layer marker. Drag a marker to change its timing or double-click it to change the text. Use `|` to force a line break.
 
-## 🔒 Privacidad y seguridad
-- La API key se cifra con **DPAPI** (Windows) o el **Llavero** (macOS). Otras cuentas del ordenador no pueden leerla.
-- El audio solo se envía a Google Gemini para transcribirlo, y AutoSub lo borra de los servidores de Google al terminar.
-- AutoSub no usa servidores propios ni recoge datos.
+## 🔒 Privacy and security
+- The API key is encrypted with **DPAPI** (Windows) or the **Keychain** (macOS). Other accounts on the computer cannot read it.
+- Audio is only sent to Google Gemini for transcription, and AutoSub deletes it from Google's servers when it is done.
+- AutoSub has no servers of its own and collects no data.
 
-## 🛠️ Para desarrolladores
+## 🛠️ For developers
 
 ```
-extension/            Panel CEP (lo que se instala)
+extension/            CEP panel (what gets installed)
   CSXS/manifest.xml
   index.html, css/
-  js/main.js          Lógica del panel e interfaz
-  js/gemini.js        Cliente de la API de Gemini (Files API + generateContent)
-  js/audio.js         Lectura WAV/AIFF, detección de voz y ajuste fino de tiempos
-  js/segment.js       Reparto de palabras en subtítulos (ancho, líneas, silencios)
+  js/main.js          Panel logic and UI
+  js/gemini.js        Gemini API client (Files API + generateContent)
+  js/audio.js         WAV/AIFF reading, voice detection and timing refinement
+  js/segment.js       Splits words into subtitles (width, lines, silences)
   js/exporters.js     SRT / VTT / TXT / JSON
-  js/quota.js         Contador de uso y cuota diaria
-  js/secret.js        Cifrado de la API key (DPAPI / Llavero)
-  js/config.js        Configuración del usuario
-  js/cep.js           Puente con After Effects (sin librerías externas)
-  jsx/host.jsx        Script de After Effects: capa, marcadores, expresiones, render de audio
+  js/quota.js         Usage counter and daily quota
+  js/secret.js        API key encryption (DPAPI / Keychain)
+  js/config.js        User configuration
+  js/cep.js           Bridge to After Effects (no external libraries)
+  jsx/host.jsx        After Effects script: layer, markers, expressions, audio render
 installer/
-  Installer.cs        Instalador de Windows (C#, se compila con el csc.exe que trae Windows)
-  build.ps1           Genera dist/AutoSub-Installer.exe y dist/AutoSub-macOS.zip
+  Installer.cs        Windows installer (C#, built with the csc.exe that ships with Windows)
+  build.ps1           Builds dist/AutoSub-Installer.exe and dist/AutoSub-macOS.zip
   Instalar-AutoSub-mac.command
 ```
 
-Para generar los instaladores:
+To build the installers:
 ```bash
 powershell -ExecutionPolicy Bypass -File installer\build.ps1
 ```
 
-No hay dependencias externas. Todo usa lo que ya traen After Effects (CEP + Node.js) y Windows (.NET Framework).
+There are no external dependencies. Everything uses what After Effects (CEP + Node.js) and Windows (.NET Framework) already include.
 
-## ⚠️ Limitaciones conocidas
-- Los tiempos por palabra los estima la IA. El ajuste fino con el audio los mejora mucho, pero con música de fondo muy fuerte puede ser menos preciso.
-- Audios de más de unos 20 minutos pueden superar el tamaño máximo de respuesta de la IA. En ese caso, divide el área de trabajo.
-- Google no permite consultar la cuota restante. La barra es una **estimación** basada en el uso desde este equipo y se corrige sola cuando Google avisa de que se agotó.
+## ⚠️ Known limitations
+- Per-word timing is estimated by the AI. The fine sync adjustment improves it a lot, but it can be less precise with very loud background music.
+- Audio longer than about 20 minutes may exceed the AI's maximum response size. If that happens, split the work area.
+- Google does not let apps check your remaining quota. The bar is an **estimate** based on usage from this computer, and it corrects itself when Google reports the quota is used up.
 
-## 🤝 Contribuir
-Las mejoras son bienvenidas: abre un *issue* o un *pull request*.
+## 🤝 Contributing
+Improvements are welcome: open an *issue* or a *pull request*.
 
-## 📄 Licencia
-[MIT](LICENSE): uso libre y gratuito, también comercial.
+## 📄 License
+[GNU GPL v3](LICENSE). You are free to use, study, share and modify AutoSub. If you distribute a modified version, it must stay open source under the same GPL v3 license.
 
 ---
-<sub>Proyecto creado íntegramente con Claude Code (Anthropic).</sub>
+<sub>Project built entirely with Claude Code (Anthropic).</sub>
