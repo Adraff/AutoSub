@@ -105,6 +105,13 @@
             <button data-v="1">1</button><button data-v="2" class="on">2</button><button data-v="3">3</button><button data-v="4">4</button>
           </div>
         </div>
+        <div class="f full" id="fontRow"><span>Tipografía <i class="muted" id="fontCount"></i></span>
+          <div class="inline">
+            <input type="text" id="fontFamily" list="fontList" placeholder="Cargando fuentes…" autocomplete="off" spellcheck="false">
+            <select id="fontStyle" class="fstyle"></select>
+          </div>
+          <datalist id="fontList"></datalist>
+        </div>
       </div>
 
       <div class="checks">
@@ -122,6 +129,7 @@
         <div class="checks">
           <label><input type="checkbox" id="breakPunct" checked> Cortar tras . ? !</label>
           <label title="Analiza el audio para encajar cada frase donde realmente se oye la voz"><input type="checkbox" id="vad" checked> Ajuste fino con el audio</label>
+          <label title="Envía a la IA solo los tramos con voz: gasta menos tokens"><input type="checkbox" id="trimSilence" checked> Quitar silencios al enviar</label>
         </div>
       </details>
 
@@ -219,7 +227,7 @@
         <p class="hint">Google no permite consultar la cuota restante, así que AutoSub cuenta tus peticiones en este equipo y se reinicia a medianoche (hora del Pacífico). El límite se corrige solo si Google avisa de que se agotó.</p>
       </details>
 
-      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.2.0</p>
+      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.3.0</p>
     </section>
   </main>
 

@@ -15,7 +15,9 @@
 - **Transcripción automática** del audio de la composición (o del archivo de una capa), con tiempos por palabra.
 - **Ajuste fino de la sincronización:** analiza el audio real para colocar cada frase en el momento exacto en que se oye y respetar los silencios.
 - **Todos los subtítulos se controlan a la vez:** viven en una sola capa de texto. Si cambias la fuente, el tamaño, el color o el trazo, el cambio se aplica a todos.
-- **Caja de texto configurable:** ancho máximo en píxeles (medido con la tipografía real) y de 1 a 4 líneas por subtítulo.
+- **Caja de texto de párrafo real:** eliges el ancho de la caja en píxeles y el texto entra de corrido. El número de líneas (de 1 a 4) es solo un máximo. El texto va centrado en la caja y el punto de anclaje queda fijo en el centro, así que nada salta y está listo para animar.
+- **Tipografía predeterminada:** elige cualquier fuente instalada en tu sistema, con buscador (requiere After Effects 2024 o posterior).
+- **Bajo consumo de tokens:** nunca se envía vídeo, solo el audio, convertido a mono 16 kHz y sin silencios. Además, la IA responde con frases compactas en lugar de palabra por palabra.
 - **Silencios:** puedes elegir si el subtítulo sigue en pantalla mientras nadie habla o desaparece.
 - **Desfase global:** con un control adelantas o retrasas todos los subtítulos.
 - **Efectos:** caja de fondo opcional que se ajusta al texto, fundido y efecto "pop".

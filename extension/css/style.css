@@ -55,6 +55,9 @@ main { padding: 6px 8px 10px; }
 .f { display: block; min-width: 0; }
 .f > span { display: block; color: var(--muted); font-size: 10px; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inline { display: flex; gap: 3px; }
+.f.full { grid-column: 1 / -1; }
+.fstyle { flex: 0 0 38%; }
+.f > span i { font-style: normal; font-size: 9.5px; }
 .inline input { flex: 1; min-width: 0; }
 
 input[type=text], input[type=number], input[type=password], input[type=search], select, textarea {

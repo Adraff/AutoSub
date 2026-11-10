@@ -131,6 +131,8 @@
       maxDuration: Number($('maxDuration').value) || 5,
       breakPunct: $('breakPunct').checked,
       vad: $('vad').checked,
+      trimSilence: $('trimSilence').checked,
+      font: $('fontStyle').value || (Config.getSettings().font || ''),
       exportFormat: $('exportFormat').value,
       exportOrigin: $('exportOrigin').value,
       exportOneLine: $('exportOneLine').checked
@@ -154,6 +156,7 @@
     if (s.maxDuration) $('maxDuration').value = s.maxDuration;
     if ('breakPunct' in s) $('breakPunct').checked = !!s.breakPunct;
     if ('vad' in s) $('vad').checked = !!s.vad;
+    if ('trimSilence' in s) $('trimSilence').checked = !!s.trimSilence;
     if (s.exportFormat) $('exportFormat').value = s.exportFormat;
     if (s.exportOrigin) $('exportOrigin').value = s.exportOrigin;
     if ('exportOneLine' in s) $('exportOneLine').checked = !!s.exportOneLine;
@@ -271,6 +274,88 @@
     if (document.activeElement !== $('limitRpd')) $('limitRpd').value = q.limit;
   }
 
+  // ================================================================ TIPOGRAFÍAS
+  var fonts = [];        // [{ f: familia, s: [[estilo, postScriptName], ...] }]
+  var fontByFamily = {};
+
+  function findFontByPS(ps) {
+    for (var i = 0; i < fonts.length; i++) {
+      for (var j = 0; j < fonts[i].s.length; j++) if (fonts[i].s[j][1] === ps) return { fam: fonts[i], style: fonts[i].s[j] };
+    }
+    return null;
+  }
+
+  function fillStyles(fam, selectPS) {
+    var sel = $('fontStyle');
+    sel.innerHTML = '';
+    fam.s.forEach(function (st) {
+      var o = document.createElement('option');
+      o.value = st[1]; o.textContent = st[0];
+      sel.appendChild(o);
+    });
+    if (selectPS && fam.s.some(function (st) { return st[1] === selectPS; })) sel.value = selectPS;
+    else {
+      // Preferimos un estilo Bold/Negrita para subtítulos; si no, Regular
+      var pick = fam.s.filter(function (st) { return /^bold$|^negrita$/i.test(st[0]); })[0] ||
+        fam.s.filter(function (st) { return /regular|normal|book/i.test(st[0]); })[0] || fam.s[0];
+      sel.value = pick[1];
+    }
+  }
+
+  function showFont(ps) {
+    var hit = ps && findFontByPS(ps);
+    if (!hit) return;
+    $('fontFamily').value = hit.fam.f;
+    fillStyles(hit.fam, ps);
+  }
+
+  function loadFonts() {
+    return CEP.call('getFonts').then(function (r) {
+      if (!r.supported || !r.fonts.length) {
+        $('fontFamily').placeholder = 'Requiere After Effects 2024 o posterior';
+        $('fontFamily').disabled = true; $('fontStyle').disabled = true;
+        log('La lista de tipografías requiere After Effects 2024 o posterior; usa el panel Carácter.', 'warn');
+        return;
+      }
+      fonts = r.fonts.sort(function (a, b) { return a.f.localeCompare(b.f); });
+      var dl = $('fontList');
+      dl.innerHTML = '';
+      fonts.forEach(function (fam) {
+        fontByFamily[fam.f.toLowerCase()] = fam;
+        var o = document.createElement('option');
+        o.value = fam.f;
+        dl.appendChild(o);
+      });
+      $('fontFamily').placeholder = 'Escribe para buscar…';
+      $('fontCount').textContent = '(' + fonts.length + ' familias)';
+      log('Tipografías del sistema cargadas: ' + fonts.length + ' familias.');
+      showFont((compInfo && compInfo.subFont) || Config.getSettings().font || 'Arial-BoldMT');
+    }).catch(function (e) { log('No se pudieron leer las tipografías: ' + e.message, 'warn'); });
+  }
+
+  /** Aplica la tipografía elegida: se guarda como predeterminada y se aplica a la capa existente. */
+  function applyFont() {
+    var ps = $('fontStyle').value;
+    if (!ps) return;
+    persistSettings();
+    log('Tipografía seleccionada: ' + $('fontFamily').value + ' ' + $('fontStyle').selectedOptions[0].textContent + ' (' + ps + ')');
+    if (busy || !compInfo || !compInfo.subLayer) return;
+    if (compInfo.hasWords) reflow(); // recalcula el reparto con la nueva tipografía
+    else CEP.call('ensureLayer', layerOpts(readSettings()));
+  }
+
+  function initFontPicker() {
+    $('fontFamily').addEventListener('change', function () {
+      var fam = fontByFamily[$('fontFamily').value.trim().toLowerCase()];
+      if (!fam) { showFont(Config.getSettings().font); return; }
+      $('fontFamily').value = fam.f;
+      fillStyles(fam);
+      applyFont();
+    });
+    $('fontFamily').addEventListener('focus', function () { this.select(); });
+    $('fontStyle').addEventListener('change', applyFont);
+  }
+
   // ================================================================ ASISTENTE DE API KEY
   var wzStep = 1;
   function showWizard(step) {
@@ -340,10 +425,10 @@
         };
       });
     }
-    function fromLayer() {
-      job('Leyendo el archivo de la capa', 0.05);
+    // Último recurso: el archivo original de la capa (puede ser un vídeo, que gasta muchos más tokens)
+    function fromLayerFile() {
       return CEP.call('layerSource').then(function (r) {
-        log('Usando el archivo original: ' + r.path);
+        log('Usando el archivo original: ' + r.path, 'warn');
         var k = (r.stretch || 100) / 100;
         return {
           path: r.path, temp: false, duration: r.duration,
@@ -352,12 +437,31 @@
         };
       });
     }
+    // Solo el audio de la capa seleccionada (nunca se envía vídeo)
+    function fromLayer() {
+      if (!compInfo || !compInfo.selected) {
+        return Promise.reject(new Error('Selecciona en la línea de tiempo la capa a subtitular.'));
+      }
+      job('Exportando el audio de la capa', 0.03);
+      log('Exportando solo el audio de la capa "' + compInfo.selected.name + '"…');
+      return CEP.call('renderAudio', { folder: tmpDir.replace(/\\/g, '/'), layerIndex: compInfo.selected.index }).then(function (r) {
+        log('Audio exportado: ' + r.path);
+        return {
+          path: r.path, temp: true, duration: r.duration,
+          toComp: function (t) { return t + r.offset; },
+          range: [r.offset, r.offset + r.duration]
+        };
+      }, function (e) {
+        log('No se pudo exportar el audio de la capa: ' + e.message, 'warn');
+        return fromLayerFile();
+      });
+    }
     if (settings.audioSource === 'layer') return fromLayer();
     return fromComp().catch(function (e) {
       log('No se pudo exportar el audio de la composición: ' + e.message, 'warn');
       if (compInfo && compInfo.selected && compInfo.selected.file) {
         log('Probando con el archivo de la capa seleccionada…', 'warn');
-        return fromLayer();
+        return fromLayerFile();
       }
       throw new Error(e.message + ' Selecciona la capa de vídeo y elige "Audio: Capa seleccionada".');
     });
@@ -377,8 +481,28 @@
     var list = Object.keys(unique);
     job('Midiendo la tipografía', p0);
     log('Midiendo ' + list.length + ' palabras con la tipografía de la capa…');
+    var forced = {};
+    var segOpts = null;
+
+    // Comprueba con la caja real de After Effects que ningún subtítulo supere las líneas máximas;
+    // si alguno se pasa, se parte en dos y se vuelve a comprobar (máx. 3 pasadas).
+    function verify(segs, pass) {
+      var multi = segs.filter(function (s) { return s.lines >= settings.maxLines; });
+      if (!multi.length || pass >= 3) return Promise.resolve(segs);
+      return CEP.call('countLines', { texts: multi.map(function (s) { return s.text; }) }).then(function (counts) {
+        var over = 0;
+        multi.forEach(function (s, i) {
+          if (counts[i] > settings.maxLines && s.w1 > s.w0) { forced[Math.ceil((s.w0 + s.w1 + 1) / 2)] = 1; over++; }
+        });
+        if (!over) return segs;
+        log('Ajuste de caja: ' + over + ' subtítulo(s) ocupaban más de ' + settings.maxLines + ' líneas; se dividen.');
+        segOpts.forceBreakBefore = forced;
+        return verify(Segmenter.segment(words, segOpts), pass + 1);
+      });
+    }
+
     return CEP.call('measure', { words: list }).then(function (m) {
-      var segs = Segmenter.segment(words, {
+      segOpts = {
         boxWidth: settings.boxWidth,
         maxLines: settings.maxLines,
         spaceWidth: m.space,
@@ -389,14 +513,24 @@
         breakPunct: settings.breakPunct,
         keepSilence: settings.keepSilence,
         endTime: compInfo && compInfo.comp ? compInfo.comp.duration : undefined
-      });
-      job('Creando ' + segs.length + ' subtítulos', p0 + (1 - p0) * 0.5);
+      };
+      job('Comprobando la caja de texto', p0 + (1 - p0) * 0.3);
+      return verify(Segmenter.segment(words, segOpts), 0);
+    }).then(function (segs) {
+      job('Creando ' + segs.length + ' subtítulos', p0 + (1 - p0) * 0.6);
       log('Creando ' + segs.length + ' subtítulos (ancho ' + settings.boxWidth + ' px, máx. ' + settings.maxLines + ' líneas, ' +
         (settings.keepSilence ? 'se mantienen' : 'se ocultan') + ' en silencios)…');
       var payload = { segments: segs, settings: settings };
       if (storeWords) payload.words = words.map(function (w) { return [w.w, w.s, w.e]; });
       return CEP.call('apply', payload);
     });
+  }
+
+  function layerOpts(settings) {
+    return {
+      fontSize: settings.fontSize, background: settings.background,
+      boxWidth: settings.boxWidth, maxLines: settings.maxLines, font: settings.font
+    };
   }
 
   function generate() {
@@ -411,30 +545,52 @@
     persistSettings();
     setBusy(true);
     logRun('Generar subtítulos · ' + model);
-    var audio = null;
+    var audio = null, prep = null, temps = [];
+
+    function cleanup() { temps.forEach(function (p) { fs.unlink(p, function () {}); }); temps = []; }
 
     refreshComp().then(function () {
       if (!compInfo || !compInfo.comp) throw new Error('Abre una composición en la línea de tiempo.');
       return getAudio(settings);
     }).then(function (a) {
       audio = a;
-      var mime = mimeFor(a.path);
-      var mb = fs.statSync(a.path).size / 1048576;
-      log('Audio listo: ' + mb.toFixed(1) + ' MB, ' + fmtTime(a.duration) + ' (' + mime + ').', 'ok');
-      if (a.duration > 20 * 60) log('Aviso: más de 20 min de audio pueden superar el límite de respuesta de la IA.', 'warn');
-      if (/^video\//.test(mime)) log('Aviso: se subirá un vídeo completo; es más lento y gasta más tokens que usar el audio de la composición.', 'warn');
+      if (a.temp) temps.push(a.path);
+      var upload = a.path, uploadDur = a.duration, mime = mimeFor(a.path);
+
+      // Optimización de tokens: mono 16 kHz y, si se elige, sin silencios
+      if (/\.(wav|aif|aiff)$/i.test(a.path)) {
+        job('Optimizando el audio', 0.08);
+        try {
+          var out = path.join(os.tmpdir(), 'AutoSub', 'autosub_up_' + Date.now() + '.wav');
+          prep = AudioAlign.prepareUpload(a.path, out, { trim: settings.trimSilence });
+          temps.push(out);
+          upload = out; uploadDur = prep.duration; mime = 'audio/wav';
+          var saved = 1 - prep.duration / prep.origDuration;
+          log('Audio optimizado: mono 16 kHz, ' + (fs.statSync(out).size / 1048576).toFixed(1) + ' MB' +
+            (prep.trimmed ? '; silencios quitados: se envían ' + fmtTime(prep.duration) + ' de ' + fmtTime(prep.origDuration) +
+              ' (' + Math.round(saved * 100) + '% menos tokens de entrada).' : '.'), 'ok');
+        } catch (err) {
+          prep = null;
+          log('No se pudo optimizar el audio (' + err.message + '); se envía tal cual.', 'warn');
+        }
+      }
+
+      var mb = fs.statSync(upload).size / 1048576;
+      log('Enviando: ' + mb.toFixed(1) + ' MB, ' + fmtTime(uploadDur) + ' (' + mime + ').');
+      if (uploadDur > 20 * 60) log('Aviso: más de 20 min de audio pueden superar el límite de respuesta de la IA.', 'warn');
+      if (/^video\//.test(mime)) log('Aviso: se subirá un vídeo completo; gasta muchos más tokens. Usa "Audio: Composición" o selecciona la capa con audio.', 'warn');
       var lastText = '';
       return Gemini.transcribe({
         apiKey: apiKey,
         model: model,
-        filePath: a.path,
+        filePath: upload,
         mimeType: mime,
         language: settings.language,
-        duration: a.duration,
+        duration: uploadDur,
         onStatus: function (text, p) {
           if (text !== lastText) { log(text + '…'); lastText = text; }
           if (p >= 0) job(text, 0.12 + p * 0.3);
-          else jobWaiting(text, 0.45, 0.85, 8 + a.duration * 0.12);
+          else jobWaiting(text, 0.45, 0.85, 6 + uploadDur * 0.08);
         },
         onRequest: function () { Quota.recordRequest(model); updateQuota(); }
       });
@@ -443,35 +599,39 @@
       var tokens = res.usage.totalTokenCount || 0;
       Quota.recordTokens(model, tokens);
       updateQuota();
-      log('Respuesta de la IA: ' + res.words.length + ' palabras · ' + tokens.toLocaleString() + ' tokens (' +
+      log('Respuesta de la IA: ' + res.phrases + ' frases, ' + res.words.length + ' palabras · ' + tokens.toLocaleString() + ' tokens (' +
         (res.usage.promptTokenCount || 0).toLocaleString() + ' de entrada, ' + (res.usage.candidatesTokenCount || 0).toLocaleString() + ' de salida).', 'ok');
       if (res.truncated) log('La respuesta de la IA se cortó: puede que falten las últimas frases.', 'warn');
 
+      // Volver a la línea de tiempo original (si se quitaron silencios)
       var aiWords = res.words;
-      if (settings.vad && /\.(wav|aif|aiff)$/i.test(audio.path) && aiWords.length) {
+      if (prep && prep.trimmed) {
+        aiWords = aiWords.map(function (w) {
+          var s = prep.toOriginal(w.s), e = prep.toOriginal(w.e);
+          return { w: w.w, s: s, e: Math.max(e, s + 0.05) };
+        });
+      }
+
+      // Ajuste fino con los tramos de voz reales
+      if (settings.vad && prep && aiWords.length) {
         job('Ajustando tiempos con el audio', 0.87);
-        try {
-          var ref = AudioAlign.refine(audio.path, aiWords);
-          if (ref.regions.length) {
-            aiWords = ref.words;
-            log('Tiempos ajustados a ' + ref.regions.length + ' tramos de voz detectados en el audio.', 'ok');
-          } else {
-            log('No se distinguió la voz del fondo; se usan los tiempos de la IA.', 'warn');
-          }
-        } catch (err) {
-          log('Ajuste fino omitido: ' + err.message, 'warn');
+        if (prep.regions.length) {
+          aiWords = AudioAlign.align(aiWords, prep.regions);
+          log('Tiempos ajustados a ' + prep.regions.length + ' tramos de voz detectados en el audio.', 'ok');
+        } else {
+          log('No se distinguió la voz del fondo; se usan los tiempos de la IA.', 'warn');
         }
       } else if (settings.vad && aiWords.length) {
-        log('Ajuste fino solo disponible con "Audio: Composición" (o capas WAV/AIFF).', 'warn');
+        log('Ajuste fino no disponible con este archivo de origen; se usan los tiempos de la IA.', 'warn');
       }
-      if (audio.temp) fs.unlink(audio.path, function () {});
+      cleanup();
 
       var words = aiWords.map(function (w) {
         return { w: w.w, s: audio.toComp(w.s), e: audio.toComp(w.e) };
       }).filter(function (w) { return w.e >= audio.range[0] - 0.05 && w.s <= audio.range[1] + 0.05; });
       if (!words.length) throw new Error('La IA no detectó voz en el audio.');
       if (res.language) log('Idioma detectado: ' + res.language);
-      return CEP.call('ensureLayer', { fontSize: settings.fontSize, background: settings.background }).then(function () {
+      return CEP.call('ensureLayer', layerOpts(settings)).then(function () {
         return layoutAndApply(words, settings, true, 0.9);
       });
     }).then(function (r) {
@@ -479,7 +639,7 @@
       log('Listo: ' + r.count + ' subtítulos creados en una sola capa.', 'ok');
     }).catch(function (e) {
       stopFake();
-      if (audio && audio.temp) fs.unlink(audio.path, function () {});
+      cleanup();
       if (e.quota) { Quota.learnFromError(model, e.quota); updateQuota(); }
       log('Error: ' + e.message, 'err');
       job('✖ ' + e.message, 1, 'err');
@@ -499,7 +659,7 @@
     CEP.call('getStore').then(function (store) {
       if (!store.words || !store.words.length) throw new Error('No hay palabras guardadas en la capa. Genera los subtítulos primero.');
       var words = store.words.map(function (a) { return { w: a[0], s: a[1], e: a[2] }; });
-      return CEP.call('ensureLayer', { fontSize: settings.fontSize, background: settings.background }).then(function () {
+      return CEP.call('ensureLayer', layerOpts(settings)).then(function () {
         return layoutAndApply(words, settings, false, 0.3);
       });
     }).then(function (r) {
@@ -614,6 +774,7 @@
       t.onclick = function () { showTab(t.getAttribute('data-tab')); };
     });
     initWizard();
+    initFontPicker();
     writeSettings(Config.getSettings());
     fillModels(Config.get('models'));
     updateKeyUI();
@@ -634,7 +795,7 @@
       };
     });
     Array.prototype.forEach.call(document.querySelectorAll('input, select'), function (el) {
-      if (el.closest('#wizard') || el.closest('#tab-settings') || el.id === 'subSearch') return;
+      if (el.closest('#wizard') || el.closest('#tab-settings') || el.closest('#fontRow') || el.id === 'subSearch') return;
       el.addEventListener('change', persistSettings);
     });
 
@@ -700,6 +861,7 @@
         $('boxWidth').value = Math.round(compInfo.comp.width * 0.8);
         $('fontSize').value = Math.round(compInfo.comp.height * 0.065);
       }
+      return loadFonts();
     });
     setInterval(refreshComp, 3000);
     setInterval(updateQuota, 30000);

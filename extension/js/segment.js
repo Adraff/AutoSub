@@ -53,7 +53,8 @@
    */
   function segment(words, opts) {
     var o = opts || {};
-    var boxW = Math.max(10, Number(o.boxWidth) || 1000);
+    // Pequeño margen de seguridad: el ajuste de línea de After Effects no es idéntico a la suma de anchos
+    var boxW = Math.max(10, Number(o.boxWidth) || 1000) * 0.97;
     var maxLines = Math.max(1, Math.floor(Number(o.maxLines) || 2));
     var spaceW = Number(o.spaceWidth) || 15;
     var avgChar = Number(o.avgCharWidth) || 30;
@@ -64,8 +65,11 @@
     var minDur = o.minDuration != null ? Number(o.minDuration) : 0.6;
     var endTime = Number(o.endTime) || Infinity;
     var widths = o.widths || {};
+    var forced = o.forceBreakBefore || {}; // índices de palabra que deben empezar subtítulo nuevo
 
-    // 1) Agrupar palabras en bloques
+    // 1) Agrupar palabras en bloques. Las líneas máximas son un LÍMITE: se simula cómo
+    //    After Effects reparte el texto de corrido en la caja y solo se corta el subtítulo
+    //    cuando la siguiente palabra ya no cabría en las líneas permitidas.
     var groups = [], cur = null;
 
     function flush() { if (cur && cur.idx.length) groups.push(cur); cur = null; }
@@ -77,7 +81,8 @@
       if (cur) {
         var prev = words[cur.idx[cur.idx.length - 1]];
         var first = words[cur.idx[0]];
-        if (wd.s - prev.e > gapBreak ||
+        if (forced[i] ||
+            wd.s - prev.e > gapBreak ||
             wd.e - first.s > maxDur ||
             (o.breakPunct && SENTENCE_END.test(prev.w))) {
           flush();
@@ -98,17 +103,13 @@
     }
     flush();
 
-    // 2) Construir texto con saltos de línea equilibrados
+    // 2) Texto de corrido (sin saltos manuales): la caja de párrafo hace el ajuste de línea
     var segs = groups.map(function (g) {
-      var ws = g.idx.map(function (k) { return wordWidth(words[k].w, widths, avgChar); });
-      var lines = balancedLines(ws, boxW, spaceW).map(function (line) {
-        return line.map(function (j) { return words[g.idx[j]].w; }).join(' ');
-      });
       return {
         start: words[g.idx[0]].s,
         speechEnd: words[g.idx[g.idx.length - 1]].e,
-        lines: lines,
-        text: lines.join('\r'),
+        lines: g.lines,
+        text: g.idx.map(function (k) { return words[k].w; }).join(' '),
         w0: g.idx[0],
         w1: g.idx[g.idx.length - 1]
       };

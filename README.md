@@ -15,7 +15,9 @@
 - **Automatic transcription** of the composition's audio (or of a layer's source file), with per-word timing.
 - **Fine sync adjustment:** analyzes the real audio to place each phrase exactly where it is heard and to respect silences.
 - **Control every subtitle at once:** all subtitles live in a single text layer. Change the font, size, color or stroke and it applies to all of them.
-- **Configurable text box:** maximum width in pixels (measured with the real typeface) and 1 to 4 lines per subtitle.
+- **Real paragraph text box:** set the box width in pixels; the text flows naturally inside it and the line count (1 to 4) is only a maximum. Text is centered in the box and the anchor point stays fixed at the box center, so nothing jumps and it is ready to animate.
+- **Default typeface picker:** choose any font installed on your system, with search (requires After Effects 2024 or later).
+- **Low token usage:** only audio is ever sent (never video), converted to mono 16 kHz, with silences removed, and the AI replies with compact phrases instead of word-by-word data.
 - **Silences:** choose whether a subtitle stays on screen while nobody is speaking or disappears.
 - **Global offset:** one control shifts every subtitle earlier or later.
 - **Effects:** optional background box that fits the text, fade and "pop" animation.

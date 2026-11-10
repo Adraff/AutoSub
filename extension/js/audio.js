@@ -74,8 +74,10 @@
     throw new Error('Profundidad de bits no compatible: ' + b);
   }
 
-  /** Devuelve la energía (dB) en tramos de 10 ms. */
-  function energy(filePath) {
+  var SR = 16000; // Gemini procesa el audio internamente a 16 kHz mono: no se pierde nada
+
+  /** Lee un WAV/AIFF y lo convierte a mono 16 kHz (Float32Array). */
+  function decode(filePath) {
     var buf = fs.readFileSync(filePath);
     var head = buf.toString('ascii', 0, 4), kind = buf.toString('ascii', 8, 12);
     var f;
@@ -86,20 +88,95 @@
     var read = sampleReader(f, buf);
     var bps = Math.ceil(f.bits / 8), frameBytes = bps * f.channels;
     var total = Math.floor(f.size / frameBytes);
-    var hop = Math.max(1, Math.round(f.sampleRate * 0.01));
-    var db = new Float32Array(Math.ceil(total / hop));
+    var ratio = f.sampleRate / SR;
+    var outLen = Math.max(1, Math.floor(total / ratio));
+    var out = new Float32Array(outLen), cnt = new Uint16Array(outLen);
     var o = f.offset;
-    for (var w = 0; w < db.length; w++) {
-      var n = Math.min(hop, total - w * hop), sum = 0;
-      for (var i = 0; i < n; i++) {
-        var s = 0;
-        for (var c = 0; c < f.channels; c++) { s += read(o); o += bps; }
-        s /= f.channels;
-        sum += s * s;
-      }
-      db[w] = 10 * Math.log10(sum / Math.max(1, n) + 1e-12);
+    // Reducción de frecuencia promediando muestras (filtro paso bajo sencillo)
+    for (var i = 0; i < total; i++) {
+      var s = 0;
+      for (var c = 0; c < f.channels; c++) { s += read(o); o += bps; }
+      var k = Math.min(outLen - 1, Math.floor(i / ratio));
+      out[k] += s / f.channels;
+      cnt[k]++;
     }
-    return { db: db, step: hop / f.sampleRate, duration: total / f.sampleRate };
+    for (var j = 0; j < outLen; j++) if (cnt[j]) out[j] /= cnt[j];
+    return { samples: out, sampleRate: SR, duration: outLen / SR };
+  }
+
+  /** Energía (dB) en tramos de 10 ms. */
+  function energyOf(dec) {
+    var hop = SR / 100, x = dec.samples;
+    var db = new Float32Array(Math.ceil(x.length / hop));
+    for (var w = 0; w < db.length; w++) {
+      var a = w * hop, b = Math.min(x.length, a + hop), sum = 0;
+      for (var i = a; i < b; i++) sum += x[i] * x[i];
+      db[w] = 10 * Math.log10(sum / Math.max(1, b - a) + 1e-12);
+    }
+    return { db: db, step: 0.01, duration: dec.duration };
+  }
+
+  function energy(filePath) { return energyOf(decode(filePath)); }
+
+  /** Escribe un WAV PCM 16 bits mono. */
+  function writeWav(filePath, samples, sr) {
+    var n = samples.length, buf = Buffer.alloc(44 + n * 2);
+    buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8);
+    buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+    buf.writeUInt32LE(sr, 24); buf.writeUInt32LE(sr * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+    buf.write('data', 36); buf.writeUInt32LE(n * 2, 40);
+    for (var i = 0; i < n; i++) {
+      var v = Math.max(-1, Math.min(1, samples[i]));
+      buf.writeInt16LE(Math.round(v * 32767), 44 + i * 2);
+    }
+    fs.writeFileSync(filePath, buf);
+  }
+
+  /**
+   * Prepara el audio que se envía a la IA para gastar los mínimos tokens:
+   *  - mono 16 kHz (archivo ~6 veces más pequeño, subida más rápida),
+   *  - opcionalmente sin silencios: solo los tramos con voz, separados por una pausa corta.
+   * Devuelve { file, duration, origDuration, regions, toOriginal(t), trimmed }.
+   */
+  function prepareUpload(filePath, outPath, opts) {
+    var o = opts || {};
+    var dec = decode(filePath);
+    var regions = detectSpeech(energyOf(dec));
+    var PAD = 0.15, GAP = 0.3;
+    var parts = [];
+    if (o.trim && regions.length) {
+      regions.forEach(function (r) {
+        var s = Math.max(0, r.s - PAD), e = Math.min(dec.duration, r.e + PAD);
+        var last = parts[parts.length - 1];
+        if (last && s <= last.e + GAP) last.e = e; else parts.push({ s: s, e: e });
+      });
+    }
+    var speech = parts.reduce(function (a, p) { return a + (p.e - p.s); }, 0);
+    var trimmed = parts.length > 0 && speech + GAP * parts.length < dec.duration * 0.9;
+
+    if (!trimmed) {
+      writeWav(outPath, dec.samples, SR);
+      return { file: outPath, duration: dec.duration, origDuration: dec.duration, regions: regions,
+        toOriginal: function (t) { return t; }, trimmed: false };
+    }
+
+    var gapN = Math.round(GAP * SR), total = 0, map = [];
+    parts.forEach(function (p) {
+      var a = Math.round(p.s * SR), b = Math.round(p.e * SR);
+      map.push({ out: total / SR, s: p.s, len: (b - a) / SR, a: a, b: b });
+      total += (b - a) + gapN;
+    });
+    var out = new Float32Array(total);
+    map.forEach(function (m) { out.set(dec.samples.subarray(m.a, m.b), Math.round(m.out * SR)); });
+    writeWav(outPath, out, SR);
+
+    function toOriginal(t) {
+      var m = map[0];
+      for (var i = 0; i < map.length; i++) { if (map[i].out <= t) m = map[i]; else break; }
+      return m.s + Math.min(Math.max(0, t - m.out), m.len); // dentro de la pausa añadida → fin del tramo
+    }
+    return { file: outPath, duration: total / SR, origDuration: dec.duration, regions: regions,
+      toOriginal: toOriginal, trimmed: true };
   }
 
   // ------------------------------------------------------------------ detección de voz
@@ -262,7 +339,8 @@
     return { words: regions.length ? align(words, regions, opts) : words, regions: regions };
   }
 
-  var api = { energy: energy, detectSpeech: detectSpeech, align: align, refine: refine };
+  var api = { energy: energy, decode: decode, detectSpeech: detectSpeech, align: align, refine: refine,
+    prepareUpload: prepareUpload, writeWav: writeWav };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.AudioAlign = api;
 })(typeof window !== 'undefined' ? window : this);

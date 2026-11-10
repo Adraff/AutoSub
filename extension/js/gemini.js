@@ -173,50 +173,67 @@
       : 'The audio is in ' + language + ' (Spanish name of the language). Transcribe in that language.';
     return [
       'You are a professional subtitle transcriber with precise forced-alignment skills.',
-      'Transcribe ALL speech in the attached audio, word by word, verbatim.',
+      'Transcribe ALL speech in the attached audio verbatim.',
       lang,
       'Never translate. Never summarize. Do not skip repeated words.',
-      'Add natural punctuation and capitalization attached to the words (e.g. "Hola," "mundo.").',
+      'Use natural punctuation and capitalization.',
       'Ignore music, noises and non-speech sounds (do not output tags like [music]).',
-      'For every word give its start time "s" and end time "e" in SECONDS from the beginning of the audio, as decimal numbers with millisecond precision (e.g. 12.345).',
-      'Timestamps must be accurate to the actual moment the word is spoken, strictly increasing, and never beyond the end of the audio' +
-        (duration ? ' (' + duration.toFixed(2) + ' seconds)' : '') + '.',
-      'If there is no speech at all, return an empty "words" array.',
-      'Also return the ISO 639-1 code of the spoken language in "language".'
+      'Split the speech into short phrases of 1 to 8 words, cutting at natural pauses.',
+      'For every phrase give "s" (start) and "e" (end) in SECONDS from the beginning of the audio, with 2 decimals (e.g. 12.34), and the text in "x".',
+      'Times must match exactly when the phrase is spoken, be strictly increasing and never beyond the end of the audio' +
+        (duration ? ' (' + duration.toFixed(2) + ' s)' : '') + '.',
+      'If there is no speech, return an empty "p" array. Return the ISO 639-1 language code in "l".'
     ].join('\n');
   }
 
+  // Respuesta compacta: frases en lugar de palabras sueltas (gasta ~60-70% menos tokens de salida).
+  // Los tiempos de cada palabra se reparten después y se afinan con el audio real.
   var RESPONSE_SCHEMA = {
     type: 'OBJECT',
     properties: {
-      language: { type: 'STRING' },
-      words: {
+      l: { type: 'STRING' },
+      p: {
         type: 'ARRAY',
         items: {
           type: 'OBJECT',
-          properties: {
-            w: { type: 'STRING' },
-            s: { type: 'NUMBER' },
-            e: { type: 'NUMBER' }
-          },
-          required: ['w', 's', 'e'],
-          propertyOrdering: ['w', 's', 'e']
+          properties: { s: { type: 'NUMBER' }, e: { type: 'NUMBER' }, x: { type: 'STRING' } },
+          required: ['s', 'e', 'x'],
+          propertyOrdering: ['s', 'e', 'x']
         }
       }
     },
-    required: ['words'],
-    propertyOrdering: ['language', 'words']
+    required: ['p'],
+    propertyOrdering: ['l', 'p']
   };
 
-  /** Intenta recuperar las palabras de un JSON cortado (cuando se agotan los tokens de salida). */
+  /** Intenta recuperar las frases de un JSON cortado (cuando se agotan los tokens de salida). */
   function salvageJSON(text) {
     try { return JSON.parse(text); } catch (e) { /* sigue */ }
-    var words = [];
-    var re = /\{\s*"w"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"s"\s*:\s*([\d.]+)\s*,\s*"e"\s*:\s*([\d.]+)\s*\}/g, m;
+    var phrases = [];
+    var re = /\{\s*"s"\s*:\s*([\d.]+)\s*,\s*"e"\s*:\s*([\d.]+)\s*,\s*"x"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g, m;
     while ((m = re.exec(text))) {
-      words.push({ w: JSON.parse('"' + m[1] + '"'), s: parseFloat(m[2]), e: parseFloat(m[3]) });
+      phrases.push({ s: parseFloat(m[1]), e: parseFloat(m[2]), x: JSON.parse('"' + m[3] + '"') });
     }
-    return { words: words, truncated: true };
+    return { p: phrases, truncated: true };
+  }
+
+  /** Reparte cada frase en palabras con tiempos proporcionales a su longitud. */
+  function phrasesToWords(phrases) {
+    var words = [];
+    (phrases || []).forEach(function (ph) {
+      var ws = String(ph.x || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      var s = Number(ph.s), e = Number(ph.e);
+      if (!ws.length || isNaN(s)) return;
+      if (isNaN(e) || e <= s) e = s + 0.3 * ws.length;
+      var tot = 0, acc = 0;
+      ws.forEach(function (w) { tot += w.length + 1; });
+      ws.forEach(function (w) {
+        var a = s + (e - s) * acc / tot;
+        acc += w.length + 1;
+        words.push({ w: w, s: a, e: s + (e - s) * acc / tot });
+      });
+    });
+    return words;
   }
 
   /** Limpia y ordena los tiempos devueltos por la IA. */
@@ -316,8 +333,9 @@
       var parsed = salvageJSON(text);
       var truncated = !!parsed.truncated || cand.finishReason === 'MAX_TOKENS';
       return {
-        words: sanitizeWords(parsed.words, opts.duration),
-        language: parsed.language || '',
+        phrases: (parsed.p || []).length,
+        words: sanitizeWords(phrasesToWords(parsed.p), opts.duration),
+        language: parsed.l || '',
         truncated: truncated,
         usage: resp.usageMetadata || {}
       };
@@ -351,6 +369,7 @@
     classifyModel: classifyModel,
     transcribe: transcribe,
     _sanitizeWords: sanitizeWords,
-    _salvageJSON: salvageJSON
+    _salvageJSON: salvageJSON,
+    _phrasesToWords: phrasesToWords
   };
 })(window);

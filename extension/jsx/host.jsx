@@ -146,11 +146,6 @@ var AutoSub = (function () {
     EXPR_FIND_MARKER +
     '(k ? k.comment.replace(/\\s*\\|\\s*/g, "\\r") : "");';
 
-  var EXPR_ANCHOR =
-    '// AutoSub: ancla abajo-centro para que el texto crezca hacia arriba\n' +
-    'var r = sourceRectAtTime(time, false);\n' +
-    '[r.left + r.width / 2, r.top + r.height];';
-
   var EXPR_OPACITY =
     '// AutoSub: fundido de entrada/salida\n' +
     'var f = effect("' + FX.fade + '")(1) * thisComp.frameDuration;\n' +
@@ -173,8 +168,52 @@ var AutoSub = (function () {
   function bgRef() { return 'var L = thisComp.layer("' + LAYER_NAME + '");\nvar r = L.sourceRectAtTime(time, false);\n'; }
 
   // ------------------------------------------------------------------ capa de subtitulos
+  // La capa es un TEXTO DE PARRAFO (caja) del ancho elegido: After Effects reparte el texto
+  // de corrido dentro de la caja. El texto se centra vertical y horizontalmente en la caja
+  // y el punto de anclaje queda fijo en el centro de la caja (no salta entre subtitulos).
+
+  var STYLE_KEYS = ['font', 'fontSize', 'applyFill', 'fillColor', 'applyStroke', 'strokeColor', 'strokeWidth',
+    'strokeOverFill', 'tracking', 'fauxBold', 'fauxItalic', 'allCaps', 'smallCaps'];
+
+  function scaleX(layer) {
+    return Math.abs(layer.property('ADBE Transform Group').property('ADBE Scale').value[0]) / 100 || 1;
+  }
+
+  function boxHeight(td, maxLines) {
+    var lead = td.fontSize * 1.2;
+    try { if (td.autoLeading === false && td.leading > 0) lead = td.leading; } catch (e) {}
+    return Math.ceil(lead * (maxLines + 1) + td.fontSize * 0.4);
+  }
+
+  /** Ajusta tamano de la caja, centrado y punto de anclaje (centro exacto de la caja). */
+  function layoutBox(layer, opts) {
+    var prop = textDocProp(layer);
+    var td = prop.value;
+    if (opts.font) { try { td.font = opts.font; } catch (e0) {} }
+    var sc = scaleX(layer);
+    var maxLines = Math.max(1, Number(opts.maxLines) || 2);
+    var w = Math.max(20, (Number(opts.boxWidth) || 1000) / sc);
+    var h = boxHeight(td, maxLines);
+    td.boxTextSize = [w, h];
+    td.justification = ParagraphJustification.CENTER_JUSTIFY;
+    try { td.boxVerticalAlignment = BoxVerticalAlignment.CENTER; } catch (e1) {}
+    prop.setValue(td);
+
+    var anchor = layer.property('ADBE Transform Group').property('ADBE Anchor Point');
+    anchor.expression = '';
+    var center = [0, 0];
+    try {
+      var t2 = prop.value, pos = t2.boxTextPos, size = t2.boxTextSize;
+      center = [pos[0] + size[0] / 2, pos[1] + size[1] / 2];
+    } catch (e2) {}
+    var old = anchor.value;
+    anchor.setValue(old.length > 2 ? [center[0], center[1], 0] : center);
+    return h * sc;
+  }
+
   function createSubLayer(comp, opts) {
-    var layer = comp.layers.addText('Subt\u00edtulo');
+    var size = Number(opts.fontSize) || Math.round(comp.height * 0.065);
+    var layer = comp.layers.addBoxText([Number(opts.boxWidth) || comp.width * 0.8, size * 3], 'Subt\u00edtulo');
     layer.name = LAYER_NAME;
     layer.startTime = 0;
     layer.inPoint = 0;
@@ -183,9 +222,8 @@ var AutoSub = (function () {
     var prop = textDocProp(layer);
     var td = prop.value;
     try { td.resetCharStyle(); td.resetParagraphStyle(); } catch (e) {}
-    var size = Number(opts.fontSize) || Math.round(comp.height * 0.065);
     td.fontSize = size;
-    try { td.font = 'Arial-BoldMT'; } catch (e1) {}
+    try { td.font = opts.font || 'Arial-BoldMT'; } catch (e1) {}
     td.applyFill = true;
     td.fillColor = [1, 1, 1];
     td.applyStroke = true;
@@ -196,9 +234,49 @@ var AutoSub = (function () {
     td.text = 'Subt\u00edtulo de ejemplo';
     prop.setValue(td);
 
-    layer.property('ADBE Transform Group').property('ADBE Position').setValue([comp.width / 2, comp.height * 0.92]);
     setupRig(layer);
+    var boxH = layoutBox(layer, opts);
+    layer.property('ADBE Transform Group').property('ADBE Position')
+      .setValue([comp.width / 2, comp.height * 0.92 - boxH / 2]);
     writeStore(layer, { v: 1, words: [], settings: {} });
+    return layer;
+  }
+
+  /** Convierte una capa de versiones anteriores (texto de punto) en caja de parrafo, conservando estilo y ajustes. */
+  function convertLegacy(comp, old, opts) {
+    var otd = textDocProp(old).value;
+    var o = {};
+    for (var k in opts) o[k] = opts[k];
+    o.fontSize = otd.fontSize;
+    o.font = opts.font || otd.font;
+    var layer = createSubLayer(comp, o);
+
+    var prop = textDocProp(layer);
+    prop.expressionEnabled = false;
+    var td = prop.value;
+    for (var i = 0; i < STYLE_KEYS.length; i++) {
+      try { td[STYLE_KEYS[i]] = otd[STYLE_KEYS[i]]; } catch (e) {}
+    }
+    if (opts.font) { try { td.font = opts.font; } catch (e2) {} }
+    prop.setValue(td);
+    prop.expressionEnabled = true;
+
+    // Copiar valores de los controles
+    var ofx = old.property('ADBE Effect Parade'), nfx = layer.property('ADBE Effect Parade');
+    for (var key in FX) {
+      var oe = ofx.property(FX[key]);
+      if (!oe) continue;
+      var ne = nfx.property(FX[key]);
+      if (!ne) ne = (key === 'bgColor') ? addColor(layer, FX[key], oe.property(1).value) : addSlider(layer, FX[key], oe.property(1).value);
+      else ne.property(1).setValue(oe.property(1).value);
+    }
+    layer.comment = old.comment;
+    var boxH = layoutBox(layer, o);
+    var opos = old.property('ADBE Transform Group').property('ADBE Position').value;
+    layer.property('ADBE Transform Group').property('ADBE Position').setValue([opos[0], opos[1] - boxH / 2]);
+    layer.moveBefore(old);
+    old.remove();
+    layer.name = LAYER_NAME;
     return layer;
   }
 
@@ -208,7 +286,6 @@ var AutoSub = (function () {
     addSlider(layer, FX.fade, 0);
     addSlider(layer, FX.pop, 0);
     var tr = layer.property('ADBE Transform Group');
-    tr.property('ADBE Anchor Point').expression = EXPR_ANCHOR;
     tr.property('ADBE Opacity').expression = EXPR_OPACITY;
     tr.property('ADBE Scale').expression = EXPR_SCALE;
     textDocProp(layer).expression = EXPR_TEXT;
@@ -297,19 +374,50 @@ var AutoSub = (function () {
       },
       selected: selected,
       subLayer: sub ? sub.name : null,
+      subFont: sub ? textDocProp(sub).value.font : null,
       hasWords: !!(store && store.words && store.words.length),
       savedSettings: store ? store.settings : null
     };
   };
 
-  /** Renderiza el audio del area de trabajo a un archivo temporal (AIFF o WAV). */
+  /**
+   * Renderiza SOLO AUDIO a un archivo temporal (AIFF o WAV):
+   *  - sin layerIndex: el area de trabajo de la composicion,
+   *  - con layerIndex: solo esa capa (se silencian las demas) entre su entrada y su salida.
+   * Nunca se envia video a la IA: el video gasta ~9 veces mas tokens.
+   */
   api.renderAudio = function (a) {
     var comp = activeComp();
-    var hasAudio = false;
-    for (var i = 1; i <= comp.numLayers; i++) {
-      if (comp.layer(i).hasAudio && comp.layer(i).audioEnabled) { hasAudio = true; break; }
+    var i, start = comp.workAreaStart, dur = comp.workAreaDuration;
+    var restore = [];
+
+    if (a.layerIndex) {
+      var target = comp.layer(a.layerIndex);
+      if (!target || !target.hasAudio) throw new Error('La capa seleccionada no tiene audio.');
+      start = Math.max(0, target.inPoint);
+      dur = Math.min(comp.duration, target.outPoint) - start;
+      if (dur <= 0) throw new Error('La capa seleccionada est\u00e1 fuera de la composici\u00f3n.');
+      for (i = 1; i <= comp.numLayers; i++) {
+        var ly = comp.layer(i);
+        if (!ly.hasAudio && !ly.solo) continue;
+        restore.push({ l: ly, audio: ly.hasAudio ? ly.audioEnabled : null, solo: ly.solo });
+        try { if (ly.solo) ly.solo = false; } catch (e0) {}
+        if (ly.hasAudio) ly.audioEnabled = (ly === target);
+      }
+    } else {
+      var hasAudio = false;
+      for (i = 1; i <= comp.numLayers; i++) {
+        if (comp.layer(i).hasAudio && comp.layer(i).audioEnabled) { hasAudio = true; break; }
+      }
+      if (!hasAudio) throw new Error('La composici\u00f3n no tiene capas con audio activado.');
     }
-    if (!hasAudio) throw new Error('La composici\u00f3n no tiene capas con audio activado.');
+
+    function restoreLayers() {
+      for (var r = 0; r < restore.length; r++) {
+        try { if (restore[r].audio !== null) restore[r].l.audioEnabled = restore[r].audio; } catch (e1) {}
+        try { restore[r].l.solo = restore[r].solo; } catch (e2) {}
+      }
+    }
 
     var rq = app.project.renderQueue;
     var paused = [];
@@ -321,8 +429,8 @@ var AutoSub = (function () {
     var item = rq.items.add(comp);
     var outPath = null, err = null;
     try {
-      item.timeSpanStart = comp.workAreaStart;
-      item.timeSpanDuration = comp.workAreaDuration;
+      item.timeSpanStart = start;
+      item.timeSpanDuration = dur;
       var om = item.outputModule(1);
       var tpl = null, tpls = om.templates;
       for (i = 0; i < tpls.length && !tpl; i++) if (/aiff/i.test(tpls[i])) tpl = tpls[i];
@@ -358,11 +466,12 @@ var AutoSub = (function () {
     }
     try { item.remove(); } catch (e3) {}
     for (i = 0; i < paused.length; i++) { try { paused[i].render = true; } catch (e4) {} }
+    restoreLayers();
     if (err) throw err;
 
     var outFile = new File(outPath);
     if (!outFile.exists) throw new Error('El render de audio no gener\u00f3 ning\u00fan archivo.');
-    return { path: outFile.fsName, offset: comp.workAreaStart, duration: comp.workAreaDuration };
+    return { path: outFile.fsName, offset: start, duration: dur };
   };
 
   /** Datos del archivo original de la capa seleccionada. */
@@ -384,45 +493,79 @@ var AutoSub = (function () {
     };
   };
 
-  /** Crea (o reutiliza) la capa de subtitulos. */
+  /** Crea (o reutiliza) la capa de subtitulos y ajusta la caja: ancho, lineas, tipografia y ancla centrada. */
   api.ensureLayer = function (a) {
     var comp = activeComp();
     var layer = findSubLayer(comp);
-    if (!layer) layer = createSubLayer(comp, a || {});
-    else setupRig(layer);
+    if (!layer) layer = createSubLayer(comp, a);
+    else if (!textDocProp(layer).value.boxText) layer = convertLegacy(comp, layer, a);
+    else { setupRig(layer); layoutBox(layer, a); }
     ensureBackground(comp, layer, !!a.background);
-    return { name: layer.name };
+    return { name: layer.name, font: textDocProp(layer).value.font };
   };
 
-  /** Mide en pixeles de la composicion el ancho de cada palabra con el estilo actual de la capa. */
-  api.measure = function (a) {
+  /** Duplicado temporal sin expresion para medir texto con el estilo y la caja de la capa. */
+  function withMeasureLayer(fn) {
     var comp = activeComp();
     var layer = requireSubLayer(comp);
     var dup = layer.duplicate();
-    var out = { widths: {}, space: 0, avgChar: 0 };
     try {
       dup.enabled = false;
       var prop = textDocProp(dup);
       prop.expressionEnabled = false;
-      var t = dup.inPoint;
-      var scaleX = Math.abs(layer.property('ADBE Transform Group').property('ADBE Scale').value[0]) / 100;
-      var td = prop.value;
-
-      var measure = function (s) {
+      var td = prop.value, t = dup.inPoint, sc = scaleX(layer);
+      return fn(function (s) {
         td.text = s;
         prop.setValue(td);
-        return dup.sourceRectAtTime(t, false).width * scaleX;
-      };
-
-      var w2 = measure('xx');
-      out.space = Math.max(1, measure('x x') - w2);
-      out.avgChar = measure('abcdefghijklmnopqrstuvwxyz') / 26;
-      var words = a.words || [];
-      for (var i = 0; i < words.length; i++) out.widths[words[i]] = measure(words[i]);
+        var r = dup.sourceRectAtTime(t, false);
+        return { w: r.width * sc, h: r.height * sc };
+      });
     } finally {
       dup.remove();
     }
-    return out;
+  }
+
+  /** Mide en pixeles de la composicion el ancho de cada palabra con el estilo actual de la capa. */
+  api.measure = function (a) {
+    return withMeasureLayer(function (m) {
+      var out = { widths: {}, space: 0, avgChar: 0 };
+      var w2 = m('xx').w;
+      out.space = Math.max(1, m('x x').w - w2);
+      out.avgChar = m('abcdefghijklmnopqrstuvwxyz').w / 26;
+      var words = a.words || [];
+      for (var i = 0; i < words.length; i++) out.widths[words[i]] = m(words[i]).w;
+      return out;
+    });
+  };
+
+  /** Cuenta cuantas lineas ocupa cada texto dentro de la caja real (verificacion final). */
+  api.countLines = function (a) {
+    return withMeasureLayer(function (m) {
+      var h1 = m('Hg').h, lead = Math.max(1, m('Hg\rHg').h - h1);
+      var out = [];
+      var texts = a.texts || [];
+      for (var i = 0; i < texts.length; i++) {
+        var h = m(texts[i]).h;
+        out.push(1 + Math.max(0, Math.round((h - h1) / lead)));
+      }
+      return out;
+    });
+  };
+
+  /** Tipografias instaladas (After Effects 2024 o posterior). */
+  api.getFonts = function () {
+    var list = [];
+    try {
+      var fams = app.fonts.allFonts;
+      for (var i = 0; i < fams.length; i++) {
+        var styles = [];
+        for (var j = 0; j < fams[i].length; j++) styles.push([fams[i][j].styleName, fams[i][j].postScriptName]);
+        if (styles.length) list.push({ f: fams[i][0].familyName, s: styles });
+      }
+    } catch (e) {
+      return { fonts: [], supported: false };
+    }
+    return { fonts: list, supported: true };
   };
 
   /** Escribe los subtitulos como marcadores y guarda las palabras para reorganizar despues. */
@@ -488,7 +631,7 @@ var AutoSub = (function () {
     return true;
   };
 
-  var MUTATING = { ensureLayer: 1, apply: 1, writeSubs: 1, measure: 1, renderAudio: 1 };
+  var MUTATING = { ensureLayer: 1, apply: 1, writeSubs: 1, measure: 1, countLines: 1, renderAudio: 1 };
 
   return {
     dispatch: function (fn, argsJSON) {
