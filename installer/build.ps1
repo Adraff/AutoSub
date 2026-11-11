@@ -37,22 +37,12 @@ if (-not (Test-Path $csc)) { throw 'No se encontro csc.exe de .NET Framework 4.'
 
 $fw = Split-Path $csc
 
-# 2a) Puente "AutoSub para EffectCraft" (se incrusta en el instalador)
-$bridge = Join-Path $build 'AutoSub-EffectCraft.exe'
-& $csc /nologo /target:winexe /optimize+ /codepage:65001 `
-    "/out:$bridge" `
-    "/r:$fw\System.Web.Extensions.dll" /r:System.Security.dll /r:System.Windows.Forms.dll `
-    (Join-Path $PSScriptRoot 'AutoSubEffectCraft.cs')
-if ($LASTEXITCODE -ne 0) { throw 'Error al compilar AutoSub para EffectCraft.' }
-Write-Host "Puente EffectCraft: $bridge"
-
 $exe = Join-Path $dist 'AutoSub-Installer.exe'
 $src = Join-Path $PSScriptRoot 'Installer.cs'
 
 & $csc /nologo /target:winexe /optimize+ /codepage:65001 `
     "/out:$exe" `
     "/resource:$payload,payload.zip" `
-    "/resource:$bridge,bridge.exe" `
     "/r:$fw\System.IO.Compression.dll" `
     "/r:$fw\System.IO.Compression.FileSystem.dll" `
     /r:System.Windows.Forms.dll /r:System.Drawing.dll `

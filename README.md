@@ -1,8 +1,8 @@
-# AutoSub: AI-powered automatic subtitles for After Effects and EffectCraft
+# AutoSub: AI-powered automatic subtitles for After Effects
 
 **English** · [Español](README.es.md)
 
-**AutoSub** is a free, open-source panel for **Adobe After Effects** and **[EffectCraft](https://github.com/storytold/effectcraft)**. It listens to your composition's audio, transcribes it with **Google Gemini** AI (using your own free API key) and creates synced subtitles directly on your timeline.
+**AutoSub** is a free, open-source panel for **Adobe After Effects**. It listens to your composition's audio, transcribes it with **Google Gemini** AI (using your own free API key) and creates synced subtitles directly on your timeline.
 
 > 🆓 **Free and open.** You can use, share, modify and improve it at no cost (GPL v3 license). All you need is a free Google Gemini API key, which anyone can create in a minute with a Google account.
 >
@@ -12,13 +12,16 @@
 
 ## ✨ Features
 
-- **Works in After Effects and EffectCraft:** the same panel and the same subtitles in both programs.
+- **English and Spanish interface:** follows the After Effects language automatically, or choose it in Settings.
+- **Interpretive generation:** besides the literal transcription, a second button lets the AI understand the context and write clean subtitles, without fillers ("uhhh", "umm"), stutters, repetitions or mispronounced words.
 - **Human-like subtitle breaks:** the AI splits speech into meaningful phrases and AutoSub chooses where to cut like a subtitler would: at commas and pauses, never leaving a lone word or ending on "de", "the", "of"…
 - **Automatic transcription** of the composition's audio (or of a layer's source file), with per-word timing.
 - **Fine sync adjustment:** analyzes the real audio to place each phrase exactly where it is heard and to respect silences.
 - **Control every subtitle at once:** all subtitles live in a single text layer. Change the font, size, color or stroke and it applies to all of them.
 - **Real paragraph text box:** set the box width in pixels; the text flows naturally inside it and the line count (1 to 4) is only a maximum. Text is centered in the box and the anchor point stays fixed at the box center, so nothing jumps and it is ready to animate.
-- **Default typeface picker:** choose any font installed on your system, with search (requires After Effects 2024 or later).
+- **Default typeface picker:** a drop-down with every font installed on your system, each shown in its own typeface, with search (requires After Effects 2024 or later).
+- **Stroke and shadow:** turn the text stroke on or off, and add After Effects' native *Drop Shadow* effect to the layer (easy to tweak later in Effect Controls).
+- **Bottom margin:** set how far from the bottom edge the subtitle box is placed when it is created, so you don't have to move it every time.
 - **Low token usage:** only audio is ever sent (never video), converted to mono 16 kHz, with silences removed, and the AI replies with compact phrases instead of word-by-word data.
 - **Silences:** choose whether a subtitle stays on screen while nobody is speaking or disappears.
 - **Global offset:** one control shifts every subtitle earlier or later.
@@ -31,31 +34,23 @@
 - **Log tab:** a detailed record of everything the panel does, for checking or reporting problems.
 - **Custom installer** with no third-party tools.
 
-> The panel interface is currently in Spanish.
-
 ## 📥 Installation
 
 ### Windows
 1. Download **`AutoSub-Installer.exe`** from [**Releases**](../../releases/latest).
 2. Close After Effects and run the installer. Click **Instalar** (Install).
-3. Open After Effects and go to **Window > Extensions > AutoSub - Subtítulos IA**.
+3. Open After Effects and go to **Window > Extensions > AutoSub**.
 
 > Windows may show a SmartScreen warning because the installer is not signed. Click *More info > Run anyway*.
 
 The installer copies the panel to `%APPDATA%\Adobe\CEP\extensions\com.autosub.ae` (for your user only, no administrator rights needed). It also enables `PlayerDebugMode`, which lets After Effects load unsigned panels. To uninstall, run it again and click **Desinstalar** (Uninstall).
 
-### EffectCraft (Windows)
-1. Run the same **`AutoSub-Installer.exe`** and tick **EffectCraft**.
-2. Open **AutoSub para EffectCraft** from the Start menu or the Desktop. It opens EffectCraft (with its control channel enabled) and shows the panel in its own window.
-
-> EffectCraft has no HTML panels like After Effects, so AutoSub talks to it through EffectCraft's local control channel (127.0.0.1 only) and its After Effects-compatible scripting. If EffectCraft is already open without the control channel, close it and click *Reintentar*. EffectCraft does not support vertical alignment inside paragraph boxes yet, so there the text is top-aligned in the box.
-
-### macOS (After Effects)
+### macOS
 1. Download **`AutoSub-macOS.zip`** from [**Releases**](../../releases/latest) and unzip it.
 2. Double-click `Instalar-AutoSub-mac.command`. If macOS blocks it, right-click > Open.
 
 ### Requirements
-- After Effects 2019 (v16) or later (tested on 2025 and 2026), and/or EffectCraft 0.24 or later on Windows.
+- After Effects 2019 (v16) or later. Tested on 2025 and 2026.
 - An internet connection and a free Google Gemini API key.
 
 ## 🔑 Free Gemini API key
@@ -71,17 +66,17 @@ No credit card is needed. The free tier has a daily request limit, which the pan
 
 1. Open your composition and set the **work area** to the part you want to subtitle.
 2. In the **Generar** (Generate) tab, choose the language, box width, number of lines and other options.
-3. Pick a green model (★ is recommended) and click **✦ Generar**.
-4. To change the style, select the `AutoSub - Subtitulos` layer and use the **Character** panel. Then click **↻** to recalculate the line breaks.
+3. Pick a green model (★ is recommended) and click **✦ Generate** (literal) or **✧ Interpretive** (clean, context-aware subtitles).
+4. To change the style, select the `AutoSub - Subtitles` layer and use the **Character** panel. Then click **↻** to recalculate the line breaks.
 5. Export from the **Exportar** (Export) tab.
 
 ### Layer controls (Effect Controls panel)
 | Control | What it does |
 |---|---|
-| Desfase (fotogramas) | Shifts every subtitle earlier (−) or later (+), in frames |
-| Fundido (fotogramas) | Fade in and out of each subtitle, in frames |
+| Offset (frames) · Desfase (fotogramas) | Shifts every subtitle earlier (−) or later (+), in frames |
+| Fade (frames) · Fundido (fotogramas) | Fade in and out of each subtitle, in frames |
 | Pop (%) | Scale animation when a subtitle appears |
-| Fondo: Opacidad / Color / Margen / Redondez | Background box opacity, color, padding and roundness (if enabled) |
+| Background: Opacity / Color / Padding / Roundness | Background box opacity, color, padding and roundness (if enabled) |
 
 You can also edit on the timeline: each subtitle is a layer marker. Drag a marker to change its timing or double-click it to change the text. Use `|` to force a line break.
 
@@ -104,12 +99,11 @@ extension/            CEP panel (what gets installed)
   js/quota.js         Usage counter and daily quota
   js/secret.js        API key encryption (DPAPI / Keychain)
   js/config.js        User configuration
-  js/cep.js           Bridge to the host app: After Effects (CEP) or EffectCraft
-  js/bridge.js        EffectCraft mode: Node-like helpers on top of the local bridge
+  js/cep.js           Bridge to After Effects (no external libraries)
+  js/i18n.js          English and Spanish texts
   jsx/host.jsx        After Effects script: layer, markers, expressions, audio render
 installer/
   Installer.cs        Windows installer (C#, built with the csc.exe that ships with Windows)
-  AutoSubEffectCraft.cs  "AutoSub para EffectCraft": local bridge + panel window
   build.ps1           Builds dist/AutoSub-Installer.exe and dist/AutoSub-macOS.zip
   Instalar-AutoSub-mac.command
 ```

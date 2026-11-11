@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.autosub.ae" ExtensionBundleVersion="1.4.1" ExtensionBundleName="AutoSub"
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.autosub.ae" ExtensionBundleVersion="1.5.0" ExtensionBundleName="AutoSub"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.autosub.ae.panel" Version="1.4.1" />
+    <Extension Id="com.autosub.ae.panel" Version="1.5.0" />
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
@@ -31,7 +31,7 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>AutoSub - Subtítulos IA</Menu>
+          <Menu>AutoSub</Menu>
           <Geometry>
             <Size>
               <Height>720</Height>

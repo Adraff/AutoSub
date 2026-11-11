@@ -15,17 +15,26 @@
 var AutoSub = (function () {
 
   var TAG = 'AUTOSUB1';
-  var LAYER_NAME = 'AutoSub - Subtitulos';
-  var BG_NAME = 'AutoSub - Fondo';
 
+  // Idioma de los mensajes y de los nombres que se crean (lo envia el panel en cada llamada)
+  var LANG = 'es';
+  function M(es, en) { return LANG === 'en' ? en : es; }
+  function nm(pair) { return LANG === 'en' ? pair[1] : pair[0]; }
+
+  // Nombres en [espanol, ingles]. Se reconocen ambos, asi las capas creadas en un idioma
+  // siguen funcionando si se cambia el idioma del panel.
+  var NAMES = {
+    layer: ['AutoSub - Subtitulos', 'AutoSub - Subtitles'],
+    bg: ['AutoSub - Fondo', 'AutoSub - Background']
+  };
   var FX = {
-    offset: 'Desfase (fotogramas)',
-    fade: 'Fundido (fotogramas)',
-    pop: 'Pop (%)',
-    bgOpacity: 'Fondo: Opacidad',
-    bgColor: 'Fondo: Color',
-    bgPad: 'Fondo: Margen',
-    bgRound: 'Fondo: Redondez'
+    offset: ['Desfase (fotogramas)', 'Offset (frames)'],
+    fade: ['Fundido (fotogramas)', 'Fade (frames)'],
+    pop: ['Pop (%)', 'Pop (%)'],
+    bgOpacity: ['Fondo: Opacidad', 'Background: Opacity'],
+    bgColor: ['Fondo: Color', 'Background: Color'],
+    bgPad: ['Fondo: Margen', 'Background: Padding'],
+    bgRound: ['Fondo: Redondez', 'Background: Roundness']
   };
 
   // ------------------------------------------------------------------ JSON (ES3)
@@ -72,7 +81,7 @@ var AutoSub = (function () {
   function activeComp() {
     var c = app.project && app.project.activeItem;
     if (!c || !(c instanceof CompItem)) {
-      throw new Error('Abre o selecciona una composici\u00f3n en la l\u00ednea de tiempo.');
+      throw new Error(M('Abre o selecciona una composici\u00f3n en la l\u00ednea de tiempo.', 'Open or select a composition on the timeline.'));
     }
     return c;
   }
@@ -94,7 +103,7 @@ var AutoSub = (function () {
 
   function requireSubLayer(comp) {
     var l = findSubLayer(comp);
-    if (!l) throw new Error('No hay ninguna capa de AutoSub en esta composici\u00f3n. Genera los subt\u00edtulos primero.');
+    if (!l) throw new Error(M('No hay ninguna capa de AutoSub en esta composici\u00f3n. Genera los subt\u00edtulos primero.', 'There is no AutoSub layer in this composition. Generate the subtitles first.'));
     return l;
   }
 
@@ -108,23 +117,28 @@ var AutoSub = (function () {
     layer.comment = TAG + stringify(data);
   }
 
-  function addSlider(layer, name, value) {
+  function findFx(layer, key) {
     var fx = layer.property('ADBE Effect Parade');
-    var e = fx.property(name);
+    return fx.property(FX[key][0]) || fx.property(FX[key][1]) || null;
+  }
+
+  function fxName(layer, key) { var e = findFx(layer, key); return e ? e.name : nm(FX[key]); }
+
+  function addSlider(layer, key, value) {
+    var e = findFx(layer, key);
     if (!e) {
-      e = fx.addProperty('ADBE Slider Control');
-      e.name = name;
+      e = layer.property('ADBE Effect Parade').addProperty('ADBE Slider Control');
+      e.name = nm(FX[key]);
       e.property(1).setValue(value);
     }
     return e;
   }
 
-  function addColor(layer, name, value) {
-    var fx = layer.property('ADBE Effect Parade');
-    var e = fx.property(name);
+  function addColor(layer, key, value) {
+    var e = findFx(layer, key);
     if (!e) {
-      e = fx.addProperty('ADBE Color Control');
-      e.name = name;
+      e = layer.property('ADBE Effect Parade').addProperty('ADBE Color Control');
+      e.name = nm(FX[key]);
       e.property(1).setValue(value);
     }
     return e;
@@ -132,42 +146,45 @@ var AutoSub = (function () {
 
   // Fragmento comun de las expresiones: encuentra el marcador activo "k" (o null)
   // "tt" es el tiempo con el desfase global aplicado (positivo = subtitulos mas tarde).
-  var EXPR_FIND_MARKER =
-    'var tt = time - effect("' + FX.offset + '")(1) * thisComp.frameDuration;\n' +
-    'var m = thisLayer.marker, k = null;\n' +
-    'if (m.numKeys > 0) {\n' +
-    '  var n = m.nearestKey(tt).index;\n' +
-    '  if (m.key(n).time > tt) n--;\n' +
-    '  if (n >= 1 && tt < m.key(n).time + m.key(n).duration) k = m.key(n);\n' +
-    '}\n';
+  function exprFindMarker(L) {
+    return 'var tt = time - effect("' + fxName(L, 'offset') + '")(1) * thisComp.frameDuration;\n' +
+      'var m = thisLayer.marker, k = null;\n' +
+      'if (m.numKeys > 0) {\n' +
+      '  var n = m.nearestKey(tt).index;\n' +
+      '  if (m.key(n).time > tt) n--;\n' +
+      '  if (n >= 1 && tt < m.key(n).time + m.key(n).duration) k = m.key(n);\n' +
+      '}\n';
+  }
 
-  var EXPR_TEXT =
-    '// AutoSub: muestra el marcador activo. Usa | en el marcador para saltar de linea.\n' +
-    EXPR_FIND_MARKER +
-    // Sin barras invertidas: EffectCraft las interpreta de otra forma al guardar la expresion
-    'var CR = String.fromCharCode(13);\n' +
-    '(k ? k.comment.split(" | ").join(CR).split("|").join(CR) : "");';
+  function exprText(L) {
+    return '// AutoSub: muestra el marcador activo / shows the active marker. "|" = salto de linea / line break\n' +
+      exprFindMarker(L) +
+      'var CR = String.fromCharCode(13);\n' +
+      '(k ? k.comment.split(" | ").join(CR).split("|").join(CR) : "");';
+  }
 
-  var EXPR_OPACITY =
-    '// AutoSub: fundido de entrada/salida\n' +
-    'var f = effect("' + FX.fade + '")(1) * thisComp.frameDuration;\n' +
-    EXPR_FIND_MARKER +
-    'var o = value;\n' +
-    'if (f > 0 && k) { o = value * Math.max(0, Math.min(1, (tt - k.time) / f, (k.time + k.duration - tt) / f)); }\n' +
-    'o;';
+  function exprOpacity(L) {
+    return '// AutoSub: fundido / fade\n' +
+      'var f = effect("' + fxName(L, 'fade') + '")(1) * thisComp.frameDuration;\n' +
+      exprFindMarker(L) +
+      'var o = value;\n' +
+      'if (f > 0 && k) { o = value * Math.max(0, Math.min(1, (tt - k.time) / f, (k.time + k.duration - tt) / f)); }\n' +
+      'o;';
+  }
 
-  var EXPR_SCALE =
-    '// AutoSub: efecto "pop" al aparecer cada subtitulo\n' +
-    'var p = effect("' + FX.pop + '")(1);\n' +
-    EXPR_FIND_MARKER +
-    'var s = value;\n' +
-    'if (p != 0 && k) {\n' +
-    '  var d = Math.min(0.25, k.duration / 2), x = (tt - k.time) / d;\n' +
-    '  if (x < 1) { var e = 1 - Math.pow(1 - Math.max(0, x), 3); s = value * ((100 - p + p * e) / 100); }\n' +
-    '}\n' +
-    's;';
+  function exprScale(L) {
+    return '// AutoSub: pop\n' +
+      'var p = effect("' + fxName(L, 'pop') + '")(1);\n' +
+      exprFindMarker(L) +
+      'var s = value;\n' +
+      'if (p != 0 && k) {\n' +
+      '  var d = Math.min(0.25, k.duration / 2), x = (tt - k.time) / d;\n' +
+      '  if (x < 1) { var e = 1 - Math.pow(1 - Math.max(0, x), 3); s = value * ((100 - p + p * e) / 100); }\n' +
+      '}\n' +
+      's;';
+  }
 
-  function bgRef() { return 'var L = thisComp.layer("' + LAYER_NAME + '");\nvar r = L.sourceRectAtTime(time, false);\n'; }
+  function bgRef(L) { return 'var L = thisComp.layer("' + L.name + '");\nvar r = L.sourceRectAtTime(time, false);\n'; }
 
   // ------------------------------------------------------------------ capa de subtitulos
   // La capa es un TEXTO DE PARRAFO (caja) del ancho elegido: After Effects reparte el texto
@@ -216,7 +233,7 @@ var AutoSub = (function () {
   function createSubLayer(comp, opts) {
     var size = Number(opts.fontSize) || Math.round(comp.height * 0.065);
     var layer = comp.layers.addBoxText([Number(opts.boxWidth) || comp.width * 0.8, size * 3], 'Subt\u00edtulo');
-    layer.name = LAYER_NAME;
+    layer.name = nm(NAMES.layer);
     layer.startTime = 0;
     layer.inPoint = 0;
     layer.outPoint = comp.duration;
@@ -228,18 +245,21 @@ var AutoSub = (function () {
     try { td.font = opts.font || 'Arial-BoldMT'; } catch (e1) {}
     td.applyFill = true;
     td.fillColor = [1, 1, 1];
-    td.applyStroke = true;
+    td.applyStroke = opts.stroke !== false;
     td.strokeColor = [0, 0, 0];
     td.strokeWidth = Math.max(1, Math.round(size * 0.08));
     td.strokeOverFill = false;
     td.justification = ParagraphJustification.CENTER_JUSTIFY;
-    td.text = 'Subt\u00edtulo de ejemplo';
+    td.text = M('Subt\u00edtulo de ejemplo', 'Sample subtitle');
     prop.setValue(td);
 
     setupRig(layer);
     var boxH = layoutBox(layer, opts);
+    // Margen inferior: distancia entre la caja y el borde inferior (solo al crear la capa)
+    var pad = (opts.bottomPad != null && opts.bottomPad !== '' && !isNaN(Number(opts.bottomPad)))
+      ? Number(opts.bottomPad) : Math.round(comp.height * 0.08);
     layer.property('ADBE Transform Group').property('ADBE Position')
-      .setValue([comp.width / 2, comp.height * 0.92 - boxH / 2]);
+      .setValue([comp.width / 2, comp.height - pad - boxH / 2]);
     writeStore(layer, { v: 1, words: [], settings: {} });
     return layer;
   }
@@ -266,35 +286,37 @@ var AutoSub = (function () {
     // Copiar valores de los controles
     var ofx = old.property('ADBE Effect Parade'), nfx = layer.property('ADBE Effect Parade');
     for (var key in FX) {
-      var oe = ofx.property(FX[key]);
+      var oe = findFx(old, key);
       if (!oe) continue;
-      var ne = nfx.property(FX[key]);
-      if (!ne) ne = (key === 'bgColor') ? addColor(layer, FX[key], oe.property(1).value) : addSlider(layer, FX[key], oe.property(1).value);
+      var ne = findFx(layer, key);
+      if (!ne) ne = (key === 'bgColor') ? addColor(layer, key, oe.property(1).value) : addSlider(layer, key, oe.property(1).value);
       else ne.property(1).setValue(oe.property(1).value);
     }
+    var oldName = old.name;
     layer.comment = old.comment;
     var boxH = layoutBox(layer, o);
     var opos = old.property('ADBE Transform Group').property('ADBE Position').value;
     layer.property('ADBE Transform Group').property('ADBE Position').setValue([opos[0], opos[1] - boxH / 2]);
     layer.moveBefore(old);
     old.remove();
-    layer.name = LAYER_NAME;
+    layer.name = oldName;
+    setupRig(layer);
     return layer;
   }
 
   /** Controles y expresiones de la capa. Se reaplica siempre para actualizar capas de versiones anteriores. */
   function setupRig(layer) {
-    addSlider(layer, FX.offset, 0);
-    addSlider(layer, FX.fade, 0);
-    addSlider(layer, FX.pop, 0);
+    addSlider(layer, 'offset', 0);
+    addSlider(layer, 'fade', 0);
+    addSlider(layer, 'pop', 0);
     var tr = layer.property('ADBE Transform Group');
-    tr.property('ADBE Opacity').expression = EXPR_OPACITY;
-    tr.property('ADBE Scale').expression = EXPR_SCALE;
-    textDocProp(layer).expression = EXPR_TEXT;
+    tr.property('ADBE Opacity').expression = exprOpacity(layer);
+    tr.property('ADBE Scale').expression = exprScale(layer);
+    textDocProp(layer).expression = exprText(layer);
   }
 
   function offsetSeconds(layer, comp) {
-    var e = layer.property('ADBE Effect Parade').property(FX.offset);
+    var e = findFx(layer, 'offset');
     return e ? e.property(1).value * comp.frameDuration : 0;
   }
 
@@ -304,29 +326,28 @@ var AutoSub = (function () {
   }
 
   function ensureBackground(comp, layer, enabled) {
-    var existing = findLayerByName(comp, BG_NAME);
+    var existing = findLayerByName(comp, NAMES.bg[0]) || findLayerByName(comp, NAMES.bg[1]);
     if (!enabled) {
       if (existing) existing.enabled = false;
       return;
     }
     if (existing) { existing.enabled = true; return; }
 
-    // La expresion del fondo apunta a la capa por nombre: aseguramos el nombre correcto
-    layer.name = LAYER_NAME;
-    addSlider(layer, FX.bgOpacity, 70);
-    addColor(layer, FX.bgColor, [0, 0, 0]);
-    addSlider(layer, FX.bgPad, 20);
-    addSlider(layer, FX.bgRound, 12);
+    // La expresion del fondo apunta a la capa de subtitulos por su nombre actual
+    addSlider(layer, 'bgOpacity', 70);
+    addColor(layer, 'bgColor', [0, 0, 0]);
+    addSlider(layer, 'bgPad', 20);
+    addSlider(layer, 'bgRound', 12);
 
     var sh = comp.layers.addShape();
-    sh.name = BG_NAME;
+    sh.name = nm(NAMES.bg);
     sh.startTime = 0; sh.inPoint = 0; sh.outPoint = comp.duration;
     var tr = sh.property('ADBE Transform Group');
     tr.property('ADBE Anchor Point').setValue([0, 0]);
     tr.property('ADBE Position').setValue([0, 0]);
 
     var grp = sh.property('ADBE Root Vectors Group').addProperty('ADBE Vector Group');
-    grp.name = 'Caja';
+    grp.name = M('Caja', 'Box');
     sh.property('ADBE Root Vectors Group').property(1).property('ADBE Vectors Group').addProperty('ADBE Vector Shape - Rect');
     sh.property('ADBE Root Vectors Group').property(1).property('ADBE Vectors Group').addProperty('ADBE Vector Graphic - Fill');
 
@@ -335,18 +356,43 @@ var AutoSub = (function () {
     var rect = vecs.property(1), fill = vecs.property(2);
 
     rect.property('ADBE Vector Rect Size').expression =
-      bgRef() + 'var p = L.effect("' + FX.bgPad + '")(1), sc = L.transform.scale;\n' +
+      bgRef(layer) + 'var p = L.effect("' + fxName(layer, 'bgPad') + '")(1), sc = L.transform.scale;\n' +
       '[(r.width + 2 * p) * sc[0] / 100, (r.height + 2 * p) * sc[1] / 100];';
     rect.property('ADBE Vector Rect Position').expression =
-      bgRef() + 'L.toComp([r.left + r.width / 2, r.top + r.height / 2]);';
+      bgRef(layer) + 'L.toComp([r.left + r.width / 2, r.top + r.height / 2]);';
     rect.property('ADBE Vector Rect Roundness').expression =
-      'thisComp.layer("' + LAYER_NAME + '").effect("' + FX.bgRound + '")(1);';
+      'thisComp.layer("' + layer.name + '").effect("' + fxName(layer, 'bgRound') + '")(1);';
     fill.property('ADBE Vector Fill Color').expression =
-      'thisComp.layer("' + LAYER_NAME + '").effect("' + FX.bgColor + '")(1);';
+      'thisComp.layer("' + layer.name + '").effect("' + fxName(layer, 'bgColor') + '")(1);';
     sh.property('ADBE Transform Group').property('ADBE Opacity').expression =
-      bgRef() + '(r.width > 0) ? L.effect("' + FX.bgOpacity + '")(1) * L.transform.opacity / 100 : 0;';
+      bgRef(layer) + '(r.width > 0) ? L.effect("' + fxName(layer, 'bgOpacity') + '")(1) * L.transform.opacity / 100 : 0;';
 
     sh.moveAfter(layer);
+  }
+
+  /** Activa/desactiva el trazo del texto y el efecto nativo "Sombra paralela" (Drop Shadow). */
+  function applyStrokeShadow(layer, a) {
+    if (a.stroke != null) {
+      var prop = textDocProp(layer), td = prop.value;
+      td.applyStroke = !!a.stroke;
+      if (a.stroke && !(td.strokeWidth > 0)) td.strokeWidth = Math.max(1, Math.round(td.fontSize * 0.08));
+      prop.setValue(td);
+    }
+    if (a.shadow != null) {
+      var fx = layer.property('ADBE Effect Parade'), ds = null, i;
+      for (i = 1; i <= fx.numProperties; i++) if (fx.property(i).matchName === 'ADBE Drop Shadow') { ds = fx.property(i); break; }
+      if (a.shadow) {
+        if (!ds) {
+          var size = textDocProp(layer).value.fontSize;
+          ds = layer.property('ADBE Effect Parade').addProperty('ADBE Drop Shadow');
+          try { ds.property('ADBE Drop Shadow-0004').setValue(Math.max(2, Math.round(size * 0.05))); } catch (e1) {}
+          try { ds.property('ADBE Drop Shadow-0005').setValue(Math.max(2, Math.round(size * 0.1))); } catch (e2) {}
+        }
+        ds.enabled = true;
+      } else if (ds) {
+        ds.enabled = false; // se desactiva (no se borra) para conservar los ajustes del usuario
+      }
+    }
   }
 
   // ------------------------------------------------------------------ funciones expuestas
@@ -379,6 +425,7 @@ var AutoSub = (function () {
       subFont: sub ? textDocProp(sub).value.font : null,
       hasWords: !!(store && store.words && store.words.length),
       markerSig: sub ? markerSignature(sub) : '',
+      markerCount: sub ? sub.property('ADBE Marker').numKeys : 0,
       savedSettings: store ? store.settings : null
     };
   };
@@ -407,10 +454,10 @@ var AutoSub = (function () {
 
     if (a.layerIndex) {
       var target = comp.layer(a.layerIndex);
-      if (!target || !target.hasAudio) throw new Error('La capa seleccionada no tiene audio.');
+      if (!target || !target.hasAudio) throw new Error(M('La capa seleccionada no tiene audio.', 'The selected layer has no audio.'));
       start = Math.max(0, target.inPoint);
       dur = Math.min(comp.duration, target.outPoint) - start;
-      if (dur <= 0) throw new Error('La capa seleccionada est\u00e1 fuera de la composici\u00f3n.');
+      if (dur <= 0) throw new Error(M('La capa seleccionada est\u00e1 fuera de la composici\u00f3n.', 'The selected layer is outside the composition.'));
       for (i = 1; i <= comp.numLayers; i++) {
         var ly = comp.layer(i);
         if (!ly.hasAudio && !ly.solo) continue;
@@ -423,7 +470,7 @@ var AutoSub = (function () {
       for (i = 1; i <= comp.numLayers; i++) {
         if (comp.layer(i).hasAudio && comp.layer(i).audioEnabled) { hasAudio = true; break; }
       }
-      if (!hasAudio) throw new Error('La composici\u00f3n no tiene capas con audio activado.');
+      if (!hasAudio) throw new Error(M('La composici\u00f3n no tiene capas con audio activado.', 'The composition has no layers with audio enabled.'));
     }
 
     function restoreLayers() {
@@ -467,7 +514,7 @@ var AutoSub = (function () {
           if (/wav/i.test(f)) { okFmt = true; ext = '.wav'; }
           else if (/aiff/i.test(f)) { okFmt = true; ext = '.aif'; }
         }
-        if (!okFmt) throw new Error('No se encontr\u00f3 una plantilla de salida de solo audio (AIFF/WAV).');
+        if (!okFmt) throw new Error(M('No se encontr\u00f3 una plantilla de salida de solo audio (AIFF/WAV).', 'No audio-only output template (AIFF/WAV) was found.'));
       }
 
       var folder = new Folder(a.folder);
@@ -484,56 +531,19 @@ var AutoSub = (function () {
     if (err) throw err;
 
     var outFile = new File(outPath);
-    if (!outFile.exists) throw new Error('El render de audio no gener\u00f3 ning\u00fan archivo.');
+    if (!outFile.exists) throw new Error(M('El render de audio no gener\u00f3 ning\u00fan archivo.', 'The audio render did not create any file.'));
     return { path: outFile.fsName, offset: start, duration: dur };
-  };
-
-  /**
-   * EffectCraft: prepara el render de audio (tramo de tiempo y, si se pide una capa, silencia las demas).
-   * El render lo hace el panel con los comandos de EffectCraft; luego llama a audioRestore.
-   */
-  api.audioPlan = function (a) {
-    var comp = activeComp();
-    var i, start = comp.workAreaStart, dur = comp.workAreaDuration, restore = [];
-    if (a.layerIndex) {
-      var target = comp.layer(a.layerIndex);
-      if (!target || !target.hasAudio) throw new Error('La capa seleccionada no tiene audio.');
-      start = Math.max(0, target.inPoint);
-      dur = Math.min(comp.duration, target.outPoint) - start;
-      for (i = 1; i <= comp.numLayers; i++) {
-        var ly = comp.layer(i);
-        if (!ly.hasAudio && !ly.solo) continue;
-        restore.push({ i: i, audio: ly.hasAudio ? ly.audioEnabled : null, solo: ly.solo });
-        try { if (ly.solo) ly.solo = false; } catch (e0) {}
-        if (ly.hasAudio) ly.audioEnabled = (ly === target);
-      }
-    } else {
-      var hasAudio = false;
-      for (i = 1; i <= comp.numLayers; i++) if (comp.layer(i).hasAudio && comp.layer(i).audioEnabled) { hasAudio = true; break; }
-      if (!hasAudio) throw new Error('La composición no tiene capas con audio activado.');
-    }
-    return { compName: comp.name, start: start, duration: dur, restore: restore };
-  };
-
-  api.audioRestore = function (a) {
-    var comp = activeComp(), r = a.restore || [];
-    for (var i = 0; i < r.length; i++) {
-      var ly = comp.layer(r[i].i);
-      try { if (r[i].audio !== null) ly.audioEnabled = r[i].audio; } catch (e1) {}
-      try { ly.solo = r[i].solo; } catch (e2) {}
-    }
-    return true;
   };
 
   /** Datos del archivo original de la capa seleccionada. */
   api.layerSource = function () {
     var comp = activeComp();
     var l = comp.selectedLayers[0];
-    if (!l) throw new Error('Selecciona en la l\u00ednea de tiempo la capa de v\u00eddeo o audio a subtitular.');
+    if (!l) throw new Error(M('Selecciona en la l\u00ednea de tiempo la capa de v\u00eddeo o audio a subtitular.', 'Select the video or audio layer to subtitle on the timeline.'));
     if (!l.source || !l.source.mainSource || !l.source.mainSource.file) {
-      throw new Error('La capa seleccionada no procede de un archivo (selecciona un v\u00eddeo o audio importado).');
+      throw new Error(M('La capa seleccionada no procede de un archivo (selecciona un v\u00eddeo o audio importado).', 'The selected layer does not come from a file (select an imported video or audio).'));
     }
-    if (!l.hasAudio) throw new Error('La capa seleccionada no tiene audio.');
+    if (!l.hasAudio) throw new Error(M('La capa seleccionada no tiene audio.', 'The selected layer has no audio.'));
     return {
       path: l.source.mainSource.file.fsName,
       startTime: l.startTime,
@@ -551,6 +561,7 @@ var AutoSub = (function () {
     if (!layer) layer = createSubLayer(comp, a);
     else if (!textDocProp(layer).value.boxText) layer = convertLegacy(comp, layer, a);
     else { setupRig(layer); layoutBox(layer, a); }
+    applyStrokeShadow(layer, a);
     ensureBackground(comp, layer, !!a.background);
     return { name: layer.name, font: textDocProp(layer).value.font };
   };
@@ -762,8 +773,9 @@ var AutoSub = (function () {
     dispatch: function (fn, argsJSON) {
       var undo = false;
       try {
-        if (!api.hasOwnProperty(fn)) throw new Error('Funci\u00f3n desconocida: ' + fn);
         var args = argsJSON ? parse(argsJSON) : {};
+        LANG = (args && args._lang === 'en') ? 'en' : 'es';
+        if (!api.hasOwnProperty(fn)) throw new Error(M('Funci\u00f3n desconocida: ', 'Unknown function: ') + fn);
         if (MUTATING[fn] && fn !== 'renderAudio') { app.beginUndoGroup('AutoSub'); undo = true; }
         var data = api[fn](args || {});
         if (undo) app.endUndoGroup();

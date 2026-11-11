@@ -14,134 +14,143 @@
       <div class="wizard-head">
         <div class="logo">AS</div>
         <div>
-          <h1>Configura tu API key</h1>
-          <p class="muted">Gratis, con tu cuenta de Google.</p>
+          <h1 data-i18n="wz.title"></h1>
+          <p class="muted" data-i18n="wz.sub"></p>
         </div>
       </div>
 
       <div class="wizard-step" data-step="1">
-        <h2><span class="num">1</span>¿Qué es?</h2>
-        <p>AutoSub usa <b>Google Gemini</b> para transcribir el audio. Cada persona usa <b>su propia clave gratuita</b> (con límites diarios).</p>
-        <p class="muted">La clave se guarda <b>cifrada</b> con tu usuario del sistema: otras cuentas del ordenador no pueden leerla. Solo se envía a Google.</p>
+        <h2><span class="num">1</span><span data-i18n="wz.s1.h"></span></h2>
+        <p data-i18n-html="wz.s1.p1"></p>
+        <p class="muted" data-i18n-html="wz.s1.p2"></p>
       </div>
 
       <div class="wizard-step hidden" data-step="2">
-        <h2><span class="num">2</span>Abre Google AI Studio</h2>
-        <p>Inicia sesión con tu cuenta de Google en la página de claves.</p>
-        <button class="btn primary" id="wzOpenStudio">Abrir aistudio.google.com/apikey ↗</button>
-        <p class="muted">Si es la primera vez, acepta las condiciones de AI Studio.</p>
+        <h2><span class="num">2</span><span data-i18n="wz.s2.h"></span></h2>
+        <p data-i18n="wz.s2.p"></p>
+        <button class="btn primary" id="wzOpenStudio" data-i18n="wz.s2.btn"></button>
+        <p class="muted" data-i18n="wz.s2.note"></p>
       </div>
 
       <div class="wizard-step hidden" data-step="3">
-        <h2><span class="num">3</span>Crea la clave</h2>
+        <h2><span class="num">3</span><span data-i18n="wz.s3.h"></span></h2>
         <ol class="steps">
-          <li>Pulsa <b>"Create API key"</b>.</li>
-          <li>Si te lo pide, elige el proyecto que viene por defecto.</li>
-          <li>Copia la clave. Empieza por <code>AIza…</code></li>
+          <li data-i18n-html="wz.s3.l1"></li>
+          <li data-i18n-html="wz.s3.l2"></li>
+          <li data-i18n-html="wz.s3.l3"></li>
         </ol>
-        <p class="muted">No hace falta tarjeta ni facturación.</p>
+        <p class="muted" data-i18n="wz.s3.note"></p>
       </div>
 
       <div class="wizard-step hidden" data-step="4">
-        <h2><span class="num">4</span>Pégala aquí</h2>
+        <h2><span class="num">4</span><span data-i18n="wz.s4.h"></span></h2>
         <div class="row">
           <input type="password" id="wzKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
-          <button class="btn icon" id="wzToggle" title="Mostrar/ocultar">👁</button>
+          <button class="btn icon" id="wzToggle" data-i18n-title="common.showHide">👁</button>
         </div>
-        <button class="btn primary full" id="wzValidate">Comprobar y guardar</button>
+        <button class="btn primary full" id="wzValidate" data-i18n="wz.validate"></button>
         <div id="wzStatus" class="status"></div>
       </div>
 
       <div class="wizard-nav">
-        <button class="btn ghost" id="wzBack">Atrás</button>
+        <button class="btn ghost" id="wzBack" data-i18n="wz.back"></button>
         <div class="dots"><span></span><span></span><span></span><span></span></div>
-        <button class="btn" id="wzNext">Siguiente</button>
+        <button class="btn" id="wzNext" data-i18n="wz.next"></button>
       </div>
-      <button class="btn ghost skip" id="wzSkip">Más tarde</button>
+      <button class="btn ghost skip" id="wzSkip" data-i18n="wz.skip"></button>
     </div>
   </div>
 
   <!-- ============ PESTAÑAS ============ -->
   <nav class="tabs">
-    <button class="tab active" data-tab="gen">Generar</button>
-    <button class="tab" data-tab="edit">Editar</button>
-    <button class="tab" data-tab="export">Exportar</button>
-    <button class="tab" data-tab="log">Log<i id="logDot" class="dot hidden"></i></button>
-    <button class="tab cfg" data-tab="settings" title="Ajustes y API key">⚙<i id="keyDot" class="dot warn"></i></button>
+    <button class="tab active" data-tab="gen" data-i18n="tab.gen"></button>
+    <button class="tab" data-tab="edit" id="tabEdit" disabled data-i18n="tab.edit"></button>
+    <button class="tab" data-tab="export" data-i18n="tab.export"></button>
+    <button class="tab" data-tab="log"><span data-i18n="tab.log"></span><i id="logDot" class="dot hidden"></i></button>
+    <button class="tab cfg" data-tab="settings" data-i18n-title="tab.settings.title">⚙<i id="keyDot" class="dot warn"></i></button>
   </nav>
 
   <main>
     <!-- ============ GENERAR ============ -->
     <section id="tab-gen" class="panel active">
-      <div id="compInfo" class="info">Selecciona una composición…</div>
+      <div id="compInfo" class="info" data-i18n="gen.selectComp"></div>
 
       <div class="grid">
-        <label class="f"><span>Audio</span>
-          <select id="audioSource" title="De dónde se toma el audio">
-            <option value="comp">Composición</option>
-            <option value="layer">Capa seleccionada</option>
+        <label class="f"><span data-i18n="gen.audio"></span>
+          <select id="audioSource" data-i18n-title="gen.audio.title">
+            <option value="comp" data-i18n="gen.audio.comp"></option>
+            <option value="layer" data-i18n="gen.audio.layer"></option>
           </select>
         </label>
-        <label class="f"><span>Idioma</span>
+        <label class="f"><span data-i18n="gen.lang"></span>
           <select id="language">
-            <option value="auto">Automático</option>
-            <option value="español">Español</option>
-            <option value="inglés">Inglés</option>
-            <option value="portugués">Portugués</option>
-            <option value="francés">Francés</option>
-            <option value="italiano">Italiano</option>
-            <option value="alemán">Alemán</option>
-            <option value="catalán">Catalán</option>
+            <option value="auto" data-i18n="lang.auto"></option>
+            <option value="es" data-i18n="lang.es"></option>
+            <option value="en" data-i18n="lang.en"></option>
+            <option value="pt" data-i18n="lang.pt"></option>
+            <option value="fr" data-i18n="lang.fr"></option>
+            <option value="it" data-i18n="lang.it"></option>
+            <option value="de" data-i18n="lang.de"></option>
+            <option value="ca" data-i18n="lang.ca"></option>
           </select>
         </label>
-        <label class="f"><span>Ancho caja (px)</span>
+        <label class="f"><span data-i18n="gen.boxWidth"></span>
           <div class="inline">
             <input type="number" id="boxWidth" min="50" step="10" value="1500">
-            <button class="btn mini" id="boxWidth80" title="80% del ancho de la composición">80%</button>
+            <button class="btn mini" id="boxWidth80" data-i18n-title="gen.box80">80%</button>
           </div>
         </label>
-        <div class="f"><span>Líneas máx.</span>
+        <div class="f"><span data-i18n="gen.maxLines"></span>
           <div class="seg" id="maxLines">
             <button data-v="1">1</button><button data-v="2" class="on">2</button><button data-v="3">3</button><button data-v="4">4</button>
           </div>
         </div>
-        <div class="f full" id="fontRow"><span>Tipografía <i class="muted" id="fontCount"></i></span>
+        <div class="f full" id="fontRow"><span><span data-i18n="gen.font"></span> <i class="muted" id="fontCount"></i></span>
           <div class="inline">
-            <input type="text" id="fontFamily" list="fontList" placeholder="Cargando fuentes…" autocomplete="off" spellcheck="false">
+            <div class="fsel" id="fontSel">
+              <button class="fsel-btn" id="fontBtn" type="button"><span class="fname" id="fontName" data-i18n="gen.fontLoading"></span><span class="caret">▾</span></button>
+              <div class="fsel-pop hidden" id="fontPop">
+                <input type="search" id="fontSearch" data-i18n-ph="gen.fontSearch" autocomplete="off" spellcheck="false">
+                <div class="fsel-list" id="fontList"></div>
+              </div>
+            </div>
             <select id="fontStyle" class="fstyle"></select>
           </div>
-          <datalist id="fontList"></datalist>
         </div>
       </div>
 
       <div class="checks">
-        <label title="Si está desactivado, el subtítulo desaparece cuando nadie habla"><input type="checkbox" id="keepSilence"> Mantener en silencios</label>
-        <label><input type="checkbox" id="bgBox"> Caja de fondo</label>
+        <label data-i18n-title="gen.keepSilence.title"><input type="checkbox" id="keepSilence"> <span data-i18n="gen.keepSilence"></span></label>
+        <label><input type="checkbox" id="bgBox"> <span data-i18n="gen.bgBox"></span></label>
+        <label><input type="checkbox" id="stroke" checked> <span data-i18n="gen.stroke"></span></label>
+        <label data-i18n-title="gen.shadow.title"><input type="checkbox" id="shadow"> <span data-i18n="gen.shadow"></span></label>
       </div>
 
       <details id="adv">
-        <summary>Avanzado</summary>
+        <summary data-i18n="gen.adv"></summary>
         <div class="grid">
-          <label class="f"><span>Silencio que corta (s)</span><input type="number" id="gapBreak" min="0.1" step="0.1" value="0.5"></label>
-          <label class="f"><span>Duración máx. (s)</span><input type="number" id="maxDuration" min="1" step="0.5" value="5"></label>
-          <label class="f"><span>Letra inicial (px)</span><input type="number" id="fontSize" min="8" step="1" value="80"></label>
+          <label class="f"><span data-i18n="gen.gapBreak"></span><input type="number" id="gapBreak" min="0.1" step="0.1" value="0.5"></label>
+          <label class="f"><span data-i18n="gen.maxDuration"></span><input type="number" id="maxDuration" min="1" step="0.5" value="5"></label>
+          <label class="f"><span data-i18n="gen.fontSize"></span><input type="number" id="fontSize" min="8" step="1" value="80"></label>
+          <label class="f" data-i18n-title="gen.bottomPad.title"><span data-i18n="gen.bottomPad"></span><input type="number" id="bottomPad" min="0" step="5" value="150"></label>
         </div>
         <div class="checks">
-          <label><input type="checkbox" id="breakPunct" checked> Cortar tras . ? !</label>
-          <label title="Analiza el audio para encajar cada frase donde realmente se oye la voz"><input type="checkbox" id="vad" checked> Ajuste fino con el audio</label>
-          <label title="Envía a la IA solo los tramos con voz: gasta menos tokens"><input type="checkbox" id="trimSilence" checked> Quitar silencios al enviar</label>
+          <label><input type="checkbox" id="breakPunct" checked> <span data-i18n="gen.breakPunct"></span></label>
+          <label data-i18n-title="gen.vad.title"><input type="checkbox" id="vad" checked> <span data-i18n="gen.vad"></span></label>
+          <label data-i18n-title="gen.trim.title"><input type="checkbox" id="trimSilence" checked> <span data-i18n="gen.trim"></span></label>
         </div>
       </details>
 
+      <div class="msel" id="modelSel">
+        <button class="msel-btn" id="modelBtn" data-i18n-title="gen.model.title">
+          <i class="mdot"></i><span class="mname" id="modelName">—</span><span class="mtag" id="modelTag"></span><span class="caret">▾</span>
+        </button>
+        <div class="msel-list hidden" id="modelList"></div>
+      </div>
       <div class="actionbar">
-        <div class="msel" id="modelSel">
-          <button class="msel-btn" id="modelBtn" title="Modelo de IA">
-            <i class="mdot"></i><span class="mname" id="modelName">—</span><span class="mtag" id="modelTag"></span><span class="caret">▾</span>
-          </button>
-          <div class="msel-list hidden" id="modelList"></div>
-        </div>
-        <button class="btn primary" id="btnGenerate">✦ Generar</button>
-        <button class="btn icon" id="btnReflow" title="Reorganizar con los ajustes y el estilo actuales (sin volver a llamar a la IA)">↻</button>
+        <button class="btn primary grow-btn" id="btnGenerate" data-i18n="gen.btnLiteral" data-i18n-title="gen.btnLiteral.title"></button>
+        <button class="btn accent2 grow-btn" id="btnInterpret" data-i18n="gen.btnInterp" data-i18n-title="gen.btnInterp.title"></button>
+        <button class="btn icon" id="btnReflow" data-i18n-title="gen.reflow.title">↻</button>
       </div>
 
       <div class="quota" id="quota">
@@ -158,82 +167,90 @@
     <!-- ============ EDITAR ============ -->
     <section id="tab-edit" class="panel">
       <div class="toolbar">
-        <input type="search" id="subSearch" placeholder="Buscar…">
-        <button class="btn" id="btnAddSub" title="Crear un subtítulo en el punto actual de la línea de tiempo">＋ Aquí</button>
-        <button class="btn icon" id="btnLoadSubs" title="Recargar desde la capa">⟳</button>
-        <button class="btn primary" id="btnSaveSubs">Guardar</button>
+        <input type="search" id="subSearch" data-i18n-ph="edit.search">
+        <button class="btn" id="btnAddSub" data-i18n="edit.addHere" data-i18n-title="edit.addHere.title"></button>
+        <button class="btn icon" id="btnLoadSubs" data-i18n-title="edit.reload.title">⟳</button>
+        <button class="btn primary" id="btnSaveSubs" data-i18n="edit.save"></button>
       </div>
-      <div id="subChanged" class="notice hidden">Los subtítulos cambiaron en la línea de tiempo (por ejemplo con Ctrl+Z). <a id="subReload">Recargar</a> (perderás los cambios sin guardar).</div>
-      <div id="subList" class="sublist"><p class="muted">Sin subtítulos cargados.</p></div>
-      <p class="hint">Estilo: cambia la fuente/tamaño de la capa en el panel Carácter y pulsa ↻ en Generar. Usa <code>|</code> para saltar de línea. Al guardar solo se aplican tus cambios: los ajustes hechos a mano en los marcadores se respetan, y todo se puede deshacer con Ctrl+Z.</p>
+      <div id="subChanged" class="notice hidden" data-i18n-html="edit.changed"></div>
+      <div id="subList" class="sublist"><p class="muted" data-i18n="edit.none"></p></div>
+      <p class="hint" data-i18n-html="edit.hint"></p>
     </section>
 
     <!-- ============ EXPORTAR ============ -->
     <section id="tab-export" class="panel">
       <div class="grid">
-        <label class="f"><span>Formato</span>
+        <label class="f"><span data-i18n="exp.format"></span>
           <select id="exportFormat">
             <option value="srt">SRT</option>
             <option value="vtt">WebVTT</option>
-            <option value="txt">Texto (.txt)</option>
-            <option value="json">JSON (por palabra)</option>
+            <option value="txt" data-i18n="exp.txt"></option>
+            <option value="json" data-i18n="exp.json"></option>
           </select>
         </label>
-        <label class="f"><span>Tiempos desde</span>
+        <label class="f"><span data-i18n="exp.origin"></span>
           <select id="exportOrigin">
-            <option value="comp">Inicio comp.</option>
-            <option value="workarea">Área de trabajo</option>
+            <option value="comp" data-i18n="exp.origin.comp"></option>
+            <option value="workarea" data-i18n="exp.origin.wa"></option>
           </select>
         </label>
       </div>
-      <div class="checks"><label><input type="checkbox" id="exportOneLine"> Unir líneas en una</label></div>
-      <button class="btn primary full" id="btnExport">Exportar archivo…</button>
+      <div class="checks"><label><input type="checkbox" id="exportOneLine"> <span data-i18n="exp.oneLine"></span></label></div>
+      <button class="btn primary full" id="btnExport" data-i18n="exp.btn"></button>
       <div id="exportStatus" class="status"></div>
     </section>
 
     <!-- ============ LOG ============ -->
     <section id="tab-log" class="panel">
       <div class="toolbar">
-        <span class="muted grow">Registro de todo lo que hace AutoSub</span>
-        <button class="btn" id="logCopy">Copiar</button>
-        <button class="btn ghost" id="logClear">Limpiar</button>
+        <span class="muted grow" data-i18n="log.desc"></span>
+        <button class="btn" id="logCopy" data-i18n="log.copy"></button>
+        <button class="btn ghost" id="logClear" data-i18n="log.clear"></button>
       </div>
-      <div id="logList" class="log"><p class="muted">Todavía no hay actividad.</p></div>
+      <div id="logList" class="log"><p class="muted" data-i18n="log.emptyStart"></p></div>
     </section>
 
     <!-- ============ AJUSTES ============ -->
     <section id="tab-settings" class="panel">
-      <div class="f"><span>API key de Gemini</span>
+      <label class="f"><span data-i18n="set.uiLang"></span>
+        <select id="uiLang">
+          <option value="auto" data-i18n="set.uiLang.auto"></option>
+          <option value="es">Español</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+
+      <div class="f" style="margin-top:8px"><span data-i18n="set.key"></span>
         <div class="row">
           <input type="password" id="setKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
-          <button class="btn icon" id="setToggle" title="Mostrar/ocultar">👁</button>
+          <button class="btn icon" id="setToggle" data-i18n-title="common.showHide">👁</button>
         </div>
       </div>
       <div class="row">
-        <button class="btn primary" id="setSaveKey">Guardar</button>
-        <button class="btn" id="setWizard">Guía</button>
-        <button class="btn" id="refreshModels" title="Actualizar la lista de modelos">Modelos ⟳</button>
-        <button class="btn ghost" id="setDeleteKey">Borrar</button>
+        <button class="btn primary" id="setSaveKey" data-i18n="set.save"></button>
+        <button class="btn" id="setWizard" data-i18n="set.guide"></button>
+        <button class="btn" id="refreshModels" data-i18n="set.models" data-i18n-title="set.models.title"></button>
+        <button class="btn ghost" id="setDeleteKey" data-i18n="set.delete"></button>
       </div>
       <div id="setStatus" class="status"></div>
       <p class="hint" id="keyInfo"></p>
 
       <details open>
-        <summary>Cuota diaria</summary>
+        <summary data-i18n="set.quota"></summary>
         <div class="grid">
-          <label class="f"><span>Peticiones/día (<span id="limModel">modelo</span>)</span>
+          <label class="f"><span id="limLabel"></span>
             <input type="number" id="limitRpd" min="1" step="1">
           </label>
-          <div class="f"><span>&nbsp;</span><button class="btn" id="openLimits">Ver límites reales ↗</button></div>
+          <div class="f"><span>&nbsp;</span><button class="btn" id="openLimits" data-i18n="set.limits"></button></div>
         </div>
-        <p class="hint">Google no permite consultar la cuota restante, así que AutoSub cuenta tus peticiones en este equipo y se reinicia a medianoche (hora del Pacífico). El límite se corrige solo si Google avisa de que se agotó.</p>
+        <p class="hint" data-i18n="set.quotaHint"></p>
       </details>
 
-      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.4.1</p>
+      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.5.0</p>
     </section>
   </main>
 
-  <script src="js/bridge.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/cep.js"></script>
   <script src="js/secret.js"></script>
   <script src="js/config.js"></script>

@@ -1,19 +1,18 @@
-// AutoSub - Instalador propio para Windows.
+// AutoSub - Instalador propio para Windows (After Effects).
 // Se compila con el compilador de C# que ya trae Windows (.NET Framework 4), sin herramientas de terceros.
-// Lleva incrustados: el panel ("payload.zip") y el puente para EffectCraft ("bridge.exe").
+// El panel va incrustado dentro del .exe como recurso "payload.zip".
 //
-// After Effects:
+// Que hace:
 //   1. Copia el panel a %APPDATA%\Adobe\CEP\extensions\com.autosub.ae (solo para el usuario actual, sin admin).
 //   2. Activa PlayerDebugMode en HKCU\Software\Adobe\CSXS.* para que After Effects cargue extensiones sin firmar.
-// EffectCraft:
-//   1. Copia el panel y "AutoSub para EffectCraft" a %LOCALAPPDATA%\AutoSub\EffectCraft.
-//   2. Crea accesos directos en el menu Inicio y en el Escritorio.
-// Desinstalar elimina todo lo anterior.
+//   3. Elimina restos de "AutoSub para EffectCraft" (versiones 1.4.x), que ya no forma parte de AutoSub.
+// El instalador se muestra en espanol o en ingles segun el idioma de Windows.
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
@@ -22,11 +21,17 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("AutoSub Installer")]
 [assembly: AssemblyProduct("AutoSub")]
-[assembly: AssemblyVersion("1.4.1.0")]
-[assembly: AssemblyFileVersion("1.4.1.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace AutoSubInstaller
 {
+    static class L
+    {
+        static readonly bool Es = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "es";
+        public static string T(string es, string en) { return Es ? es : en; }
+    }
+
     static class Program
     {
         [STAThread]
@@ -38,14 +43,8 @@ namespace AutoSubInstaller
                 string a = args[0].ToLowerInvariant().TrimStart('/', '-');
                 try
                 {
-                    if (a == "install")
-                    {
-                        Core.InstallAE(null);
-                        if (Core.FindEffectCraft() != null) Core.InstallEC(null);
-                        Console.WriteLine("AutoSub instalado.");
-                        return 0;
-                    }
-                    if (a == "uninstall") { Core.Uninstall(); Console.WriteLine("AutoSub desinstalado."); return 0; }
+                    if (a == "install") { Core.Install(null); Console.WriteLine("AutoSub: " + Core.TargetDir); return 0; }
+                    if (a == "uninstall") { Core.Uninstall(); Console.WriteLine("AutoSub uninstalled."); return 0; }
                 }
                 catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
             }
@@ -61,26 +60,12 @@ namespace AutoSubInstaller
         public const string ExtensionId = "com.autosub.ae";
         public static readonly int[] CsxsVersions = { 8, 9, 10, 11, 12, 13, 14, 15 };
 
-        public static string AeDir
+        public static string ExtensionsRoot
         {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Adobe", "CEP", "extensions", ExtensionId); }
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Adobe", "CEP", "extensions"); }
         }
-        public static string EcDir
-        {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AutoSub", "EffectCraft"); }
-        }
-        public static string EcExe { get { return Path.Combine(EcDir, "AutoSub-EffectCraft.exe"); } }
-        static string ShortcutStart
-        {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "AutoSub para EffectCraft.lnk"); }
-        }
-        static string ShortcutDesktop
-        {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "AutoSub para EffectCraft.lnk"); }
-        }
-
-        public static bool AeInstalled { get { return File.Exists(Path.Combine(AeDir, "CSXS", "manifest.xml")); } }
-        public static bool EcInstalled { get { return File.Exists(EcExe); } }
+        public static string TargetDir { get { return Path.Combine(ExtensionsRoot, ExtensionId); } }
+        public static bool IsInstalled { get { return File.Exists(Path.Combine(TargetDir, "CSXS", "manifest.xml")); } }
 
         public static List<string> DetectAfterEffects()
         {
@@ -103,71 +88,56 @@ namespace AutoSubInstaller
             return found;
         }
 
-        /// <summary>Ruta de effectcraft.exe si EffectCraft esta instalado.</summary>
-        public static string FindEffectCraft()
+        public static bool AfterEffectsRunning() { return Process.GetProcessesByName("AfterFX").Length > 0; }
+
+        /// <summary>Quita "AutoSub para EffectCraft" instalado por las versiones 1.4.x.</summary>
+        public static void RemoveEffectCraftLeftovers()
         {
-            string[] keys = { @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" };
-            foreach (RegistryKey root in new[] { Registry.CurrentUser, Registry.LocalMachine })
+            try
             {
-                foreach (string k in keys)
-                {
-                    using (RegistryKey u = root.OpenSubKey(k))
-                    {
-                        if (u == null) continue;
-                        foreach (string sub in u.GetSubKeyNames())
-                        {
-                            using (RegistryKey app = u.OpenSubKey(sub))
-                            {
-                                string name = app == null ? null : app.GetValue("DisplayName") as string;
-                                if (name == null || name.IndexOf("EffectCraft", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                                string loc = app.GetValue("InstallLocation") as string;
-                                if (!string.IsNullOrEmpty(loc) && File.Exists(Path.Combine(loc, "effectcraft.exe"))) return Path.Combine(loc, "effectcraft.exe");
-                                string guess = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"ArtCraft\EffectCraft\effectcraft.exe");
-                                if (File.Exists(guess)) return guess;
-                                return "(instalado)";
-                            }
-                        }
-                    }
-                }
+                foreach (var p in Process.GetProcessesByName("AutoSub-EffectCraft")) { try { p.Kill(); p.WaitForExit(3000); } catch { } }
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AutoSub", "EffectCraft");
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                string[] links = {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "AutoSub para EffectCraft.lnk"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "AutoSub para EffectCraft.lnk")
+                };
+                foreach (string l in links) if (File.Exists(l)) File.Delete(l);
             }
-            string g2 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"ArtCraft\EffectCraft\effectcraft.exe");
-            return File.Exists(g2) ? g2 : null;
+            catch { }
         }
 
-        public static bool AfterEffectsRunning() { return Process.GetProcessesByName("AfterFX").Length > 0; }
-        public static bool BridgeRunning() { return Process.GetProcessesByName("AutoSub-EffectCraft").Length > 0; }
-
-        static void ExtractPayload(string targetDir, Action<int, string> progress, int p0, int p1)
+        public static void Install(Action<int, string> progress)
         {
+            if (progress == null) progress = delegate (int p, string s) { };
+
+            progress(5, L.T("Preparando carpeta de extensiones...", "Preparing the extensions folder..."));
+            Directory.CreateDirectory(ExtensionsRoot);
+            if (Directory.Exists(TargetDir)) Directory.Delete(TargetDir, true);
+            Directory.CreateDirectory(TargetDir);
+
+            progress(15, L.T("Copiando archivos del panel...", "Copying panel files..."));
             Stream payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip");
-            if (payload == null) throw new Exception("El instalador está dañado: no contiene los archivos del panel.");
+            if (payload == null) throw new Exception(L.T("El instalador está dañado: no contiene los archivos del panel.", "The installer is damaged: it does not contain the panel files."));
             using (payload)
             using (var zip = new ZipArchive(payload, ZipArchiveMode.Read))
             {
                 int total = zip.Entries.Count, i = 0;
-                string rootFull = Path.GetFullPath(targetDir) + Path.DirectorySeparatorChar;
+                string rootFull = Path.GetFullPath(TargetDir) + Path.DirectorySeparatorChar;
                 foreach (ZipArchiveEntry entry in zip.Entries)
                 {
                     i++;
                     string rel = entry.FullName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                    string dest = Path.GetFullPath(Path.Combine(targetDir, rel));
+                    string dest = Path.GetFullPath(Path.Combine(TargetDir, rel));
                     if (!dest.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase)) continue; // seguridad
                     if (rel.EndsWith(Path.DirectorySeparatorChar.ToString()) || entry.Name.Length == 0) { Directory.CreateDirectory(dest); continue; }
                     Directory.CreateDirectory(Path.GetDirectoryName(dest));
                     entry.ExtractToFile(dest, true);
-                    progress(p0 + (int)((p1 - p0) * (double)i / Math.Max(1, total)), "Copiando " + entry.Name);
+                    progress(15 + (int)(70.0 * i / Math.Max(1, total)), L.T("Copiando ", "Copying ") + entry.Name);
                 }
             }
-        }
 
-        public static void InstallAE(Action<int, string> progress)
-        {
-            if (progress == null) progress = delegate (int p, string s) { };
-            progress(5, "After Effects: preparando carpeta de extensiones...");
-            if (Directory.Exists(AeDir)) Directory.Delete(AeDir, true);
-            Directory.CreateDirectory(AeDir);
-            ExtractPayload(AeDir, progress, 10, 45);
-            progress(48, "After Effects: activando extensiones sin firmar (PlayerDebugMode)...");
+            progress(90, L.T("Activando extensiones sin firmar en After Effects (PlayerDebugMode)...", "Enabling unsigned extensions in After Effects (PlayerDebugMode)..."));
             foreach (int v in CsxsVersions)
             {
                 using (RegistryKey k = Registry.CurrentUser.CreateSubKey(@"Software\Adobe\CSXS." + v))
@@ -175,48 +145,14 @@ namespace AutoSubInstaller
                     if (k != null) k.SetValue("PlayerDebugMode", "1", RegistryValueKind.String);
                 }
             }
-            progress(50, "After Effects: listo.");
-        }
-
-        public static void InstallEC(Action<int, string> progress)
-        {
-            if (progress == null) progress = delegate (int p, string s) { };
-            progress(52, "EffectCraft: copiando AutoSub para EffectCraft...");
-            if (Directory.Exists(EcDir)) Directory.Delete(EcDir, true);
-            string web = Path.Combine(EcDir, "web");
-            Directory.CreateDirectory(web);
-            ExtractPayload(web, progress, 55, 85);
-            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("bridge.exe"))
-            {
-                if (s == null) throw new Exception("El instalador está dañado: falta AutoSub para EffectCraft.");
-                using (var f = File.Create(EcExe)) s.CopyTo(f);
-            }
-            progress(90, "EffectCraft: creando accesos directos...");
-            CreateShortcut(ShortcutStart, EcExe, "AutoSub: subtítulos automáticos con IA para EffectCraft");
-            CreateShortcut(ShortcutDesktop, EcExe, "AutoSub: subtítulos automáticos con IA para EffectCraft");
-            progress(100, "EffectCraft: listo.");
-        }
-
-        static void CreateShortcut(string lnk, string target, string description)
-        {
-            // WScript.Shell viene con Windows; se usa por reflexion (sin referencias externas)
-            Type t = Type.GetTypeFromProgID("WScript.Shell");
-            object shell = Activator.CreateInstance(t);
-            object sc = t.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { lnk });
-            Type st = sc.GetType();
-            st.InvokeMember("TargetPath", BindingFlags.SetProperty, null, sc, new object[] { target });
-            st.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, sc, new object[] { Path.GetDirectoryName(target) });
-            st.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { description });
-            st.InvokeMember("Save", BindingFlags.InvokeMethod, null, sc, null);
+            RemoveEffectCraftLeftovers();
+            progress(100, L.T("Instalación completada.", "Installation complete."));
         }
 
         public static void Uninstall()
         {
-            if (Directory.Exists(AeDir)) Directory.Delete(AeDir, true);
-            foreach (var p in Process.GetProcessesByName("AutoSub-EffectCraft")) { try { p.Kill(); p.WaitForExit(3000); } catch { } }
-            if (Directory.Exists(EcDir)) Directory.Delete(EcDir, true);
-            if (File.Exists(ShortcutStart)) File.Delete(ShortcutStart);
-            if (File.Exists(ShortcutDesktop)) File.Delete(ShortcutDesktop);
+            if (Directory.Exists(TargetDir)) Directory.Delete(TargetDir, true);
+            RemoveEffectCraftLeftovers();
         }
     }
 
@@ -231,12 +167,11 @@ namespace AutoSubInstaller
         Label status, stateLabel;
         ProgressBar bar;
         Button btnInstall, btnUninstall, btnClose;
-        CheckBox chkAE, chkEC;
 
         public MainForm()
         {
-            Text = "Instalar AutoSub";
-            ClientSize = new Size(560, 470);
+            Text = L.T("Instalar AutoSub para After Effects", "Install AutoSub for After Effects");
+            ClientSize = new Size(560, 430);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -258,45 +193,38 @@ namespace AutoSubInstaller
             };
             Controls.Add(logo);
             Controls.Add(new Label { Text = "AutoSub", Font = new Font("Segoe UI", 18f, FontStyle.Bold), Location = new Point(98, 24), AutoSize = true, ForeColor = Color.White });
-            Controls.Add(new Label { Text = "Subtítulos automáticos con IA (Google Gemini) · libre y gratuito", Location = new Point(100, 60), AutoSize = true, ForeColor = Muted });
+            Controls.Add(new Label
+            {
+                Text = L.T("Subtítulos automáticos con IA (Google Gemini) para After Effects", "AI-powered automatic subtitles (Google Gemini) for After Effects"),
+                Location = new Point(100, 60), AutoSize = true, ForeColor = Muted
+            });
 
-            var card = new Panel { Location = new Point(28, 104), Size = new Size(504, 206), BackColor = Card };
+            var card = new Panel { Location = new Point(28, 104), Size = new Size(504, 168), BackColor = Card };
             Controls.Add(card);
-            card.Controls.Add(new Label { Text = "¿Dónde quieres instalarlo?", Location = new Point(14, 10), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 10f, FontStyle.Bold) });
-
             List<string> ae = Core.DetectAfterEffects();
-            chkAE = new CheckBox
+            card.Controls.Add(new Label
             {
-                Location = new Point(16, 38), Size = new Size(476, 22), Checked = ae.Count > 0 || Core.AeInstalled, ForeColor = Fg,
-                Text = "Adobe After Effects" + (ae.Count > 0 ? "  (" + string.Join(", ", ae.ToArray()) + ")" : "  (no detectado)")
-            };
-            card.Controls.Add(chkAE);
-            card.Controls.Add(new Label { Location = new Point(34, 60), Size = new Size(460, 18), ForeColor = Muted, Text = "Ventana > Extensiones > AutoSub - Subtítulos IA" });
-
-            bool ecFound = Core.FindEffectCraft() != null;
-            chkEC = new CheckBox
-            {
-                Location = new Point(16, 88), Size = new Size(476, 22), Checked = ecFound || Core.EcInstalled, ForeColor = Fg,
-                Text = "EffectCraft" + (ecFound ? "  (detectado)" : "  (no detectado)")
-            };
-            card.Controls.Add(chkEC);
-            card.Controls.Add(new Label { Location = new Point(34, 110), Size = new Size(460, 34), ForeColor = Muted, Text = "Se abre como ventana propia con el acceso directo \"AutoSub para EffectCraft\" (menú Inicio y Escritorio)." });
-
-            stateLabel = new Label { Location = new Point(14, 152), Size = new Size(476, 44), ForeColor = Muted };
+                Location = new Point(14, 12), Size = new Size(476, 40), ForeColor = Fg,
+                Text = ae.Count > 0
+                    ? L.T("After Effects detectado: ", "After Effects detected: ") + string.Join(", ", ae.ToArray())
+                    : L.T("No se detectó After Effects en Archivos de programa (se instalará igualmente).", "After Effects was not found in Program Files (it will be installed anyway).")
+            });
+            card.Controls.Add(new Label { Location = new Point(14, 56), Size = new Size(476, 52), ForeColor = Muted, Text = L.T("Se instalará en:\n", "It will be installed in:\n") + Core.TargetDir });
+            stateLabel = new Label { Location = new Point(14, 112), Size = new Size(476, 44), ForeColor = Muted };
             card.Controls.Add(stateLabel);
 
-            bar = new ProgressBar { Location = new Point(28, 326), Size = new Size(504, 8), Style = ProgressBarStyle.Continuous };
+            bar = new ProgressBar { Location = new Point(28, 288), Size = new Size(504, 8), Style = ProgressBarStyle.Continuous };
             Controls.Add(bar);
-            status = new Label { Location = new Point(28, 342), Size = new Size(504, 60), ForeColor = Fg };
+            status = new Label { Location = new Point(28, 304), Size = new Size(504, 52), ForeColor = Fg };
             Controls.Add(status);
 
-            btnInstall = MakeButton("Instalar", new Point(28, 410), 160, true);
+            btnInstall = MakeButton(L.T("Instalar", "Install"), new Point(28, 368), 160, true);
             btnInstall.Click += OnInstall;
             Controls.Add(btnInstall);
-            btnUninstall = MakeButton("Desinstalar", new Point(198, 410), 130, false);
+            btnUninstall = MakeButton(L.T("Desinstalar", "Uninstall"), new Point(198, 368), 130, false);
             btnUninstall.Click += OnUninstall;
             Controls.Add(btnUninstall);
-            btnClose = MakeButton("Cerrar", new Point(432, 410), 100, false);
+            btnClose = MakeButton(L.T("Cerrar", "Close"), new Point(432, 368), 100, false);
             btnClose.Click += delegate { Close(); };
             Controls.Add(btnClose);
 
@@ -329,22 +257,21 @@ namespace AutoSubInstaller
 
         void RefreshState()
         {
-            var parts = new List<string>();
-            if (Core.AeInstalled) parts.Add("After Effects");
-            if (Core.EcInstalled) parts.Add("EffectCraft");
-            stateLabel.Text = parts.Count > 0
-                ? "Ya instalado en: " + string.Join(" y ", parts.ToArray()) + ". Pulsa \"Instalar\" para actualizar."
-                : "Estado: no instalado.";
-            btnInstall.Text = parts.Count > 0 ? "Actualizar" : "Instalar";
-            btnUninstall.Enabled = parts.Count > 0;
+            bool inst = Core.IsInstalled;
+            stateLabel.Text = inst
+                ? L.T("Estado: AutoSub ya está instalado. Pulsa \"Actualizar\" para reinstalarlo.", "Status: AutoSub is already installed. Click \"Update\" to reinstall it.")
+                : L.T("Estado: no instalado.", "Status: not installed.");
+            btnInstall.Text = inst ? L.T("Actualizar", "Update") : L.T("Instalar", "Install");
+            btnUninstall.Enabled = inst;
         }
 
-        bool CheckClosed()
+        bool CheckAfterEffectsClosed()
         {
-            while ((chkAE.Checked && Core.AfterEffectsRunning()) || Core.BridgeRunning())
+            while (Core.AfterEffectsRunning())
             {
                 var r = MessageBox.Show(this,
-                    "Cierra After Effects y la ventana de AutoSub para EffectCraft para continuar (guarda tu trabajo antes).\n\nPulsa Reintentar cuando estén cerrados.",
+                    L.T("After Effects está abierto. Ciérralo para continuar (guarda tu trabajo antes).\n\nPulsa Reintentar cuando lo hayas cerrado.",
+                        "After Effects is open. Close it to continue (save your work first).\n\nClick Retry once it is closed."),
                     "AutoSub", MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning);
                 if (r == DialogResult.Cancel) return false;
             }
@@ -353,20 +280,17 @@ namespace AutoSubInstaller
 
         void OnInstall(object sender, EventArgs e)
         {
-            if (!chkAE.Checked && !chkEC.Checked) { MessageBox.Show(this, "Elige al menos un programa.", "AutoSub"); return; }
-            if (!CheckClosed()) return;
+            if (!CheckAfterEffectsClosed()) return;
             SetButtons(false);
-            Action<int, string> prog = delegate (int p, string s) { bar.Value = Math.Max(0, Math.Min(100, p)); status.Text = s; Application.DoEvents(); };
             try
             {
-                var done = new List<string>();
-                if (chkAE.Checked) { Core.InstallAE(prog); done.Add("After Effects: Ventana > Extensiones > AutoSub - Subtítulos IA."); }
-                if (chkEC.Checked) { Core.InstallEC(prog); done.Add("EffectCraft: abre \"AutoSub para EffectCraft\" desde el menú Inicio o el Escritorio."); }
-                bar.Value = 100;
+                Core.Install(delegate (int p, string s) { bar.Value = Math.Max(0, Math.Min(100, p)); status.Text = s; Application.DoEvents(); });
+                string open = L.T("Ventana > Extensiones > AutoSub", "Window > Extensions > AutoSub");
                 status.ForeColor = Color.FromArgb(63, 191, 127);
-                status.Text = "✔ Instalado.\n" + string.Join("\n", done.ToArray());
-                MessageBox.Show(this, "AutoSub se ha instalado correctamente.\n\n" + string.Join("\n", done.ToArray()) +
-                    "\n\nLa primera vez, el panel te guiará para cargar tu API key gratuita de Google Gemini.",
+                status.Text = L.T("✔ Instalado. Abre After Effects y ve a ", "✔ Installed. Open After Effects and go to ") + open + ".";
+                MessageBox.Show(this,
+                    L.T("AutoSub se ha instalado correctamente.\n\n1. Abre After Effects.\n2. Menú ", "AutoSub was installed successfully.\n\n1. Open After Effects.\n2. Menu ") + open + ".\n" +
+                    L.T("3. Sigue la guía para cargar tu API key gratuita de Google Gemini.", "3. Follow the guide to add your free Google Gemini API key."),
                     "AutoSub", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -380,15 +304,17 @@ namespace AutoSubInstaller
 
         void OnUninstall(object sender, EventArgs e)
         {
-            if (MessageBox.Show(this, "¿Quieres desinstalar AutoSub (After Effects y EffectCraft)?\n\nTus subtítulos ya creados en tus proyectos no se borran.",
+            if (MessageBox.Show(this,
+                L.T("¿Quieres desinstalar AutoSub?\n\nTus subtítulos ya creados en proyectos de After Effects no se borran.",
+                    "Do you want to uninstall AutoSub?\n\nSubtitles already created in your After Effects projects are not deleted."),
                 "AutoSub", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            if (!CheckClosed()) return;
+            if (!CheckAfterEffectsClosed()) return;
             try
             {
                 Core.Uninstall();
                 bar.Value = 0;
                 status.ForeColor = Fg;
-                status.Text = "AutoSub se ha desinstalado.";
+                status.Text = L.T("AutoSub se ha desinstalado.", "AutoSub has been uninstalled.");
             }
             catch (Exception ex)
             {

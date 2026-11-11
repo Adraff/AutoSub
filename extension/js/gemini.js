@@ -15,16 +15,9 @@
   var fs = require('fs');
   var URL_BASE = 'https://generativelanguage.googleapis.com';
 
-  var bridge = global.AutoSubBridge || null;
+  var t = function (k, p) { return global.I18N ? global.I18N.t(k, p) : k; };
 
   function request(method, url, headers, body, onUploadProgress) {
-    // Modo EffectCraft: la petición HTTPS la hace el puente local (puede enviar un archivo entero)
-    if (bridge) {
-      var opts = { method: method, url: url, headers: headers || {} };
-      if (body && body.file) opts.bodyFile = body.file;
-      else if (body != null) opts.body = String(body);
-      return bridge.http(opts).then(function (r) { if (onUploadProgress) onUploadProgress(1); return r; });
-    }
     if (body && body.file) body = fs.createReadStream(body.file);
     return new Promise(function (resolve, reject) {
       var u = new (require('url').URL)(url);
@@ -40,8 +33,8 @@
           resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') });
         });
       });
-      req.on('error', function (e) { reject(new Error('Error de red: ' + e.message)); });
-      req.setTimeout(10 * 60 * 1000, function () { req.abort(); reject(new Error('Tiempo de espera agotado.')); });
+      req.on('error', function (e) { reject(new Error(t('g.net', { msg: e.message }))); });
+      req.setTimeout(10 * 60 * 1000, function () { req.abort(); reject(new Error(t('g.timeout'))); });
 
       if (body && typeof body.pipe === 'function') {
         // Stream (archivo): reporta progreso de subida
@@ -88,19 +81,19 @@
       if (j.error && j.error.message) msg = j.error.message;
     } catch (e) { /* cuerpo no JSON */ }
     if (res.status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) {
-      return new Error('La API key no es válida. Revisa que la copiaste completa (empieza por "AIza").');
+      return new Error(t('g.keyInvalid'));
     }
-    if (res.status === 403) return new Error('Acceso denegado por Google: ' + msg);
+    if (res.status === 403) return new Error(t('g.denied', { msg: msg }));
     if (res.status === 429) {
       var q = parseQuota(j);
       var text = q.perDay
-        ? 'Has agotado las peticiones gratuitas de hoy para este modelo. Se recargan a medianoche (hora del Pacífico) o puedes elegir otro modelo verde.'
-        : 'Has alcanzado el límite gratuito por minuto de Gemini.' + (q.retrySec ? ' Vuelve a intentarlo en ' + Math.ceil(q.retrySec) + ' s.' : ' Espera un minuto y vuelve a intentarlo.');
+        ? t('g.quotaDay')
+        : t('g.quotaMin') + (q.retrySec ? t('g.retryIn', { s: Math.ceil(q.retrySec) }) : t('g.retryMin'));
       var err = new Error(text);
       err.quota = q;
       return err;
     }
-    if (res.status >= 500) return new Error('Los servidores de Gemini están saturados (' + res.status + '). Inténtalo de nuevo en unos minutos.');
+    if (res.status >= 500) return new Error(t('g.busy', { status: res.status }));
     return new Error(msg);
   }
 
@@ -143,7 +136,7 @@
     }, JSON.stringify({ file: { display_name: 'autosub-' + name } })).then(function (res) {
       if (res.status !== 200) throw apiError(res);
       var uploadUrl = res.headers['x-goog-upload-url'];
-      if (!uploadUrl) throw new Error('Google no devolvió la URL de subida.');
+      if (!uploadUrl) throw new Error(t('g.noUploadUrl'));
       return request('POST', uploadUrl, {
         'Content-Length': String(size),
         'X-Goog-Upload-Offset': '0',
@@ -166,8 +159,8 @@
     var tries = 0;
     function check(f) {
       if (f.state === 'ACTIVE') return f;
-      if (f.state === 'FAILED') throw new Error('Google no pudo procesar el audio subido.');
-      if (++tries > 120) throw new Error('El audio tarda demasiado en procesarse en Google.');
+      if (f.state === 'FAILED') throw new Error(t('g.fileFailed'));
+      if (++tries > 120) throw new Error(t('g.fileSlow'));
       return sleep(2000).then(function () { return getFile(apiKey, f.name); }).then(check);
     }
     return Promise.resolve(file).then(check);
@@ -177,23 +170,43 @@
     return request('DELETE', URL_BASE + '/v1beta/' + name, { 'x-goog-api-key': apiKey }).catch(function () {});
   }
 
-  function buildPrompt(language, duration) {
-    var lang = (!language || language === 'auto')
-      ? 'Detect the spoken language automatically and transcribe in that same language.'
-      : 'The audio is in ' + language + ' (Spanish name of the language). Transcribe in that language.';
-    return [
+  var LANG_NAMES = { es: 'Spanish', en: 'English', pt: 'Portuguese', fr: 'French', it: 'Italian', de: 'German', ca: 'Catalan',
+    'español': 'Spanish', 'inglés': 'English', 'portugués': 'Portuguese', 'francés': 'French', 'italiano': 'Italian', 'alemán': 'German', 'catalán': 'Catalan' };
+
+  /**
+   * mode "literal": transcripción exacta.
+   * mode "interpret": la IA entiende el contexto y escribe subtítulos limpios y legibles, como un
+   * subtitulador profesional: sin muletillas, titubeos, repeticiones ni falsos comienzos, y corrigiendo
+   * palabras mal pronunciadas o mal oídas según el contexto (sin cambiar el sentido ni resumir).
+   */
+  function buildPrompt(language, duration, mode) {
+    var name = LANG_NAMES[language];
+    var lang = name
+      ? 'The audio is in ' + name + '. Write the subtitles in that language.'
+      : 'Detect the spoken language automatically and write the subtitles in that same language.';
+    var style = mode === 'interpret' ? [
+      'You are a professional subtitle editor. Listen to the whole audio first and understand its context and topic.',
+      'Write clean, readable subtitles that faithfully convey what the speaker MEANS, as a professional subtitler would:',
+      '- Remove filler sounds and hesitations (e.g. "eh", "ehh", "eeeh", "mmm", "este", "o sea" used as filler, "um", "uh", "like" used as filler), stretched sounds ("yyyy", "peeero") and stutters.',
+      '- Remove false starts and accidental repetitions ("el, el, el coche" becomes "el coche").',
+      '- Fix mispronounced, cut-off or misheard words using the context, and write names, brands and technical terms correctly.',
+      "- Keep the speaker's own words, tone and meaning. Do not summarize, do not add information, do not translate.",
+      '- Use correct spelling, punctuation and capitalization.'
+    ] : [
       'You are a professional subtitle transcriber with precise forced-alignment skills.',
       'Transcribe ALL speech in the attached audio verbatim.',
-      lang,
       'Never translate. Never summarize. Do not skip repeated words.',
-      'Use natural punctuation and capitalization.',
+      'Use natural punctuation and capitalization.'
+    ];
+    return style.concat([
+      lang,
       'Ignore music, noises and non-speech sounds (do not output tags like [music]).',
       'Split the speech into short phrases of 1 to 8 words, cutting at natural pauses and meaningful units, like a professional subtitler (never end a phrase on an article, preposition or conjunction such as "de", "la", "y", "the", "of").',
       'For every phrase give "s" (start) and "e" (end) in SECONDS from the beginning of the audio, with 2 decimals (e.g. 12.34), and the text in "x".',
       'Times must match exactly when the phrase is spoken, be strictly increasing and never beyond the end of the audio' +
         (duration ? ' (' + duration.toFixed(2) + ' s)' : '') + '.',
       'If there is no speech, return an empty "p" array. Return the ISO 639-1 language code in "l".'
-    ].join('\n');
+    ]).join('\n');
   }
 
   // Respuesta compacta: frases en lugar de palabras sueltas (gasta ~60-70% menos tokens de salida).
@@ -306,15 +319,15 @@
   function transcribe(opts) {
     var status = opts.onStatus || function () {};
     var uploaded = null;
-    status('Subiendo audio a Gemini', 0);
+    status(t('job.upload'), 0);
     return uploadFile(opts.apiKey, opts.filePath, opts.mimeType, function (p) {
-      status('Subiendo audio a Gemini', p * 0.8);
+      status(t('job.upload'), p * 0.8);
     }).then(function (file) {
       uploaded = file;
-      status('Google está procesando el audio', 0.85);
+      status(t('job.processing'), 0.85);
       return waitActive(opts.apiKey, file);
     }).then(function (file) {
-      status('La IA está transcribiendo', -1);
+      status(t(opts.mode === 'interpret' ? 'job.interpreting' : 'job.transcribing'), -1);
       var genConfig = {
         temperature: 0,
         responseMimeType: 'application/json',
@@ -328,7 +341,7 @@
           role: 'user',
           parts: [
             { file_data: { mime_type: file.mimeType || opts.mimeType, file_uri: file.uri } },
-            { text: buildPrompt(opts.language, opts.duration) }
+            { text: buildPrompt(opts.language, opts.duration, opts.mode) }
           ]
         }],
         generationConfig: genConfig
@@ -337,7 +350,7 @@
       var cand = resp.candidates && resp.candidates[0];
       if (!cand) {
         var block = resp.promptFeedback && resp.promptFeedback.blockReason;
-        throw new Error('Gemini no devolvió resultado' + (block ? ' (bloqueado: ' + block + ')' : '') + '.');
+        throw new Error(t('g.noResult', { block: block ? t('g.blocked', { r: block }) : '' }));
       }
       var text = ((cand.content && cand.content.parts) || []).map(function (p) { return p.text || ''; }).join('');
       var parsed = salvageJSON(text);
@@ -367,11 +380,11 @@
    */
   function classifyModel(id) {
     id = String(id).toLowerCase();
-    if (/(^|-)pro(-|$)|ultra|deep-?think/.test(id)) return { tier: 'paid', tag: 'de pago', rank: 9 };
-    if (/thinking|-exp|learnlm/.test(id)) return { tier: 'paid', tag: 'más tokens', rank: 8 };
-    if (/flash-lite|flash-8b/.test(id)) return { tier: 'free', tag: 'gratuito', rec: true, rank: /latest/.test(id) ? 0 : 1 };
-    if (/flash/.test(id)) return { tier: 'free', tag: 'gratuito', rank: /latest/.test(id) ? 2 : 3 };
-    return { tier: 'paid', tag: 'no recomendado', rank: 7 };
+    if (/(^|-)pro(-|$)|ultra|deep-?think/.test(id)) return { tier: 'paid', tag: 'model.paid', rank: 9 };
+    if (/thinking|-exp|learnlm/.test(id)) return { tier: 'paid', tag: 'model.tokens', rank: 8 };
+    if (/flash-lite|flash-8b/.test(id)) return { tier: 'free', tag: 'model.free', rec: true, rank: /latest/.test(id) ? 0 : 1 };
+    if (/flash/.test(id)) return { tier: 'free', tag: 'model.free', rank: /latest/.test(id) ? 2 : 3 };
+    return { tier: 'paid', tag: 'model.notrec', rank: 7 };
   }
 
   global.Gemini = {

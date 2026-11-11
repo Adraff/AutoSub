@@ -226,3 +226,40 @@ details[open] summary { color: var(--text); }
 .sub .acts .del:hover { color: var(--err); }
 .notice { background: rgba(224,168,58,.12); border: 1px solid rgba(224,168,58,.4); color: var(--warn); border-radius: 3px; padding: 4px 6px; margin-bottom: 5px; font-size: 10.5px; }
 .notice a { color: var(--accent2); text-decoration: underline; cursor: pointer; }
+
+/* ---------- 1.5.0 ---------- */
+/* Pestaña bloqueada (Editar antes de generar) */
+.tab:disabled { opacity: .35; cursor: not-allowed; }
+.tab:disabled:hover { color: var(--muted); }
+
+/* Modelo encima de los botones de generar */
+#modelSel { display: block; margin: 6px 0 4px; }
+#modelSel .msel-btn { height: 24px; }
+.actionbar { margin-top: 0; }
+.actionbar .grow-btn { flex: 1; min-width: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; }
+.btn.accent2 { background: #6c4bd8; border-color: #6c4bd8; color: #fff; font-weight: 600; }
+.btn.accent2:hover:not(:disabled) { background: #7d5ee6; }
+
+/* Selector de tipografía con buscador y vista previa */
+.fsel { position: relative; flex: 1; min-width: 0; }
+.fsel-btn {
+  width: 100%; height: var(--h); display: flex; align-items: center; gap: 4px;
+  background: #1b1b1b; color: var(--text); border: 1px solid var(--line); border-radius: 3px;
+  padding: 0 6px; cursor: pointer; font: inherit; text-align: left;
+}
+.fsel-btn:hover { border-color: #555; }
+.fsel-btn:disabled { opacity: .5; cursor: default; }
+.fname { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fsel-pop {
+  position: absolute; left: 0; top: calc(100% + 2px); z-index: 30;
+  width: calc(100vw - 16px); max-width: 340px;
+  background: #1e1e1e; border: 1px solid #4a4a4a; border-radius: 4px; box-shadow: 0 6px 16px rgba(0,0,0,.55);
+  padding: 4px; display: flex; flex-direction: column; gap: 4px;
+}
+.fsel-pop.up { top: auto; bottom: calc(100% + 2px); }
+.fsel-list { overflow-y: auto; max-height: 260px; }
+.fopt { padding: 4px 6px; cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 2px; }
+.fopt:hover, .fopt.hl { background: #2c2c2c; }
+.fopt.sel { background: rgba(45,140,235,.22); }
+.fopt small { font-family: "Segoe UI", sans-serif; color: var(--muted); font-size: 9.5px; margin-left: 6px; }
+.fsel-none { padding: 6px; color: var(--muted); }
