@@ -283,7 +283,7 @@
     var o = opts || {};
     if (!words.length || !regions || !regions.length) return words.slice();
     var maxSnap = o.maxSnap || 1.5;
-    var ws = words.map(function (w) { return { w: w.w, s: w.s, e: w.e }; });
+    var ws = words.map(function (w) { return { w: w.w, s: w.s, e: w.e, p: w.p }; });
 
     // 1) Corrección global de desplazamiento/escala usando el principio y el final del habla
     var g0 = ws[0].s, g1 = ws[ws.length - 1].e;

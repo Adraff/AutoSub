@@ -12,6 +12,7 @@
   var compInfo = null;
   var busy = false;
   var models = [];
+  var HOST_NAME = CEP.hostName; // 'After Effects' o 'EffectCraft'
 
   var MIME = {
     wav: 'audio/wav', aif: 'audio/aiff', aiff: 'audio/aiff', mp3: 'audio/mp3', aac: 'audio/aac',
@@ -304,6 +305,17 @@
 
   function showFont(ps) {
     var hit = ps && findFontByPS(ps);
+    if (!hit && ps) {
+      // Equivalencia aproximada entre nombres PostScript (After Effects) y "Familia|Estilo" (EffectCraft)
+      var parts = String(ps).split(/[|-]/), famKey = parts[0].replace(/\s+/g, '').toLowerCase();
+      var styleKey = (parts[1] || 'Regular').replace(/MT$|PS$/, '').toLowerCase();
+      var fam = fonts.filter(function (f) { return f.f.replace(/\s+/g, '').toLowerCase() === famKey; })[0];
+      if (fam) {
+        var st = fam.s.filter(function (x) { return x[0].replace(/\s+/g, '').toLowerCase() === styleKey; })[0] || fam.s[0];
+        hit = { fam: fam, style: st };
+        ps = st[1];
+      }
+    }
     if (!hit) return;
     $('fontFamily').value = hit.fam.f;
     fillStyles(hit.fam, ps);
@@ -407,6 +419,7 @@
         (info.subLayer ? '\nCapa de subtítulos: ' + info.subLayer : '') +
         (info.selected ? '\nCapa seleccionada: ' + info.selected.name : '');
       $('btnReflow').disabled = !info.hasWords;
+      checkEditorSync();
     }).catch(function () { /* AE ocupado: se reintenta luego */ });
   }
 
@@ -490,13 +503,18 @@
       var multi = segs.filter(function (s) { return s.lines >= settings.maxLines; });
       if (!multi.length || pass >= 3) return Promise.resolve(segs);
       return CEP.call('countLines', { texts: multi.map(function (s) { return s.text; }) }).then(function (counts) {
-        var over = 0;
-        multi.forEach(function (s, i) {
-          if (counts[i] > settings.maxLines && s.w1 > s.w0) { forced[Math.ceil((s.w0 + s.w1 + 1) / 2)] = 1; over++; }
-        });
-        if (!over) return segs;
-        log('Ajuste de caja: ' + over + ' subtítulo(s) ocupaban más de ' + settings.maxLines + ' líneas; se dividen.');
-        segOpts.forceBreakBefore = forced;
+        var over = multi.filter(function (s, i) { return counts[i] > settings.maxLines && s.w1 > s.w0; });
+        if (!over.length) return segs;
+        if (pass < 2) {
+          // La tipografía real ocupa algo más que lo medido: se recalcula todo con un margen mayor,
+          // así los cortes siguen siendo naturales (no se parte por la mitad).
+          segOpts.boxWidth *= 0.95;
+          log('Ajuste de caja: ' + over.length + ' subtítulo(s) ocupaban más de ' + settings.maxLines + ' líneas; se recalculan los cortes.');
+        } else {
+          over.forEach(function (s) { forced[Math.ceil((s.w0 + s.w1 + 1) / 2)] = 1; });
+          segOpts.forceBreakBefore = forced;
+          log('Ajuste de caja: se dividen ' + over.length + ' subtítulo(s) que no cabían.');
+        }
         return verify(Segmenter.segment(words, segOpts), pass + 1);
       });
     }
@@ -521,7 +539,7 @@
       log('Creando ' + segs.length + ' subtítulos (ancho ' + settings.boxWidth + ' px, máx. ' + settings.maxLines + ' líneas, ' +
         (settings.keepSilence ? 'se mantienen' : 'se ocultan') + ' en silencios)…');
       var payload = { segments: segs, settings: settings };
-      if (storeWords) payload.words = words.map(function (w) { return [w.w, w.s, w.e]; });
+      if (storeWords) payload.words = words.map(function (w) { return w.p != null ? [w.w, w.s, w.e, w.p] : [w.w, w.s, w.e]; });
       return CEP.call('apply', payload);
     });
   }
@@ -608,7 +626,7 @@
       if (prep && prep.trimmed) {
         aiWords = aiWords.map(function (w) {
           var s = prep.toOriginal(w.s), e = prep.toOriginal(w.e);
-          return { w: w.w, s: s, e: Math.max(e, s + 0.05) };
+          return { w: w.w, s: s, e: Math.max(e, s + 0.05), p: w.p };
         });
       }
 
@@ -627,7 +645,7 @@
       cleanup();
 
       var words = aiWords.map(function (w) {
-        return { w: w.w, s: audio.toComp(w.s), e: audio.toComp(w.e) };
+        return { w: w.w, s: audio.toComp(w.s), e: audio.toComp(w.e), p: w.p };
       }).filter(function (w) { return w.e >= audio.range[0] - 0.05 && w.s <= audio.range[1] + 0.05; });
       if (!words.length) throw new Error('La IA no detectó voz en el audio.');
       if (res.language) log('Idioma detectado: ' + res.language);
@@ -658,7 +676,7 @@
     job('Leyendo palabras guardadas', 0.1);
     CEP.call('getStore').then(function (store) {
       if (!store.words || !store.words.length) throw new Error('No hay palabras guardadas en la capa. Genera los subtítulos primero.');
-      var words = store.words.map(function (a) { return { w: a[0], s: a[1], e: a[2] }; });
+      var words = store.words.map(function (a) { return { w: a[0], s: a[1], e: a[2], p: a[3] }; });
       return CEP.call('ensureLayer', layerOpts(settings)).then(function () {
         return layoutAndApply(words, settings, false, 0.3);
       });
@@ -672,53 +690,115 @@
   }
 
   // ================================================================ EDITOR
+  // Cada fila recuerda su estado original. Al guardar solo se envían los CAMBIOS hechos aquí;
+  // así no se pisan los ajustes hechos a mano en la línea de tiempo (mover o alargar marcadores).
   var editorSubs = [];
+  var editorSig = null;      // huella de los marcadores cuando se cargó el editor
+
+  function editorDirty() {
+    return editorSubs.some(function (s) { return s.isNew || s.del || s.dText || s.dStart || s.dEnd; });
+  }
 
   function renderEditor() {
     var box = $('subList');
     var filter = $('subSearch').value.trim().toLowerCase();
     box.innerHTML = '';
-    if (!editorSubs.length) { box.innerHTML = '<p class="muted">No hay subtítulos en la capa.</p>'; return; }
-    editorSubs.forEach(function (s, i) {
+    var visible = editorSubs.filter(function (s) { return !s.del; });
+    if (!visible.length) { box.innerHTML = '<p class="muted">No hay subtítulos. Usa "＋ Aquí" para crear uno en el punto actual de la línea de tiempo.</p>'; return; }
+    visible.forEach(function (s, i) {
       if (filter && s.text.toLowerCase().indexOf(filter) < 0) return;
       var el = document.createElement('div');
-      el.className = 'sub' + (s.dirty ? ' dirty' : '');
+      el.className = 'sub' + (s.isNew || s.dText || s.dStart || s.dEnd ? ' dirty' : '');
       el.innerHTML =
         '<span class="idx">' + (i + 1) + '</span>' +
         '<div class="times"><input type="number" step="0.01" class="st" title="Entrada (s)">' +
         '<input type="number" step="0.01" class="en" title="Salida (s)"></div>' +
-        '<textarea rows="2"></textarea>' +
-        '<button class="btn go" title="Ir a este momento">▶</button>';
+        '<textarea rows="2" placeholder="Texto del subtítulo"></textarea>' +
+        '<div class="acts"><button class="btn go" title="Ir a este momento">▶</button>' +
+        '<button class="btn go add" title="Añadir un subtítulo después de este">＋</button>' +
+        '<button class="btn go del" title="Eliminar este subtítulo">✕</button></div>';
       var st = el.querySelector('.st'), en = el.querySelector('.en'), ta = el.querySelector('textarea');
       st.value = s.start.toFixed(2); en.value = s.end.toFixed(2); ta.value = s.text;
-      function dirty() { s.dirty = true; el.classList.add('dirty'); }
-      st.oninput = function () { s.start = Number(st.value); dirty(); };
-      en.oninput = function () { s.end = Number(en.value); dirty(); };
-      ta.oninput = function () { s.text = ta.value; dirty(); };
+      function mark() { el.classList.add('dirty'); updateEditorBar(); }
+      st.oninput = function () { s.start = Number(st.value); s.dStart = true; mark(); };
+      en.oninput = function () { s.end = Number(en.value); s.dEnd = true; mark(); };
+      ta.oninput = function () { s.text = ta.value; s.dText = true; mark(); };
       el.querySelector('.go').onclick = function () { CEP.call('gotoTime', { t: s.start + 0.01 }); };
+      el.querySelector('.add').onclick = function () { insertSub(s.end, s); };
+      el.querySelector('.del').onclick = function () {
+        if (s.isNew) editorSubs.splice(editorSubs.indexOf(s), 1); else s.del = true;
+        renderEditor(); updateEditorBar();
+      };
       box.appendChild(el);
+      if (s.focus) { delete s.focus; setTimeout(function () { ta.focus(); ta.select(); }, 30); }
     });
+  }
+
+  /** Crea un subtítulo nuevo en el tiempo t (sin pisar al siguiente). */
+  function insertSub(t, after) {
+    var sorted = editorSubs.filter(function (x) { return !x.del; }).sort(function (a, b) { return a.start - b.start; });
+    var next = sorted.filter(function (x) { return x !== after && x.start > t + 0.001; })[0];
+    var end = t + 2;
+    if (next) end = Math.min(end, next.start);
+    if (end - t < 0.3) end = t + 1;
+    var s = { start: Math.round(t * 100) / 100, end: Math.round(end * 100) / 100, text: '', isNew: true, focus: true };
+    editorSubs.push(s);
+    editorSubs.sort(function (a, b) { return a.start - b.start; });
+    $('subSearch').value = '';
+    renderEditor(); updateEditorBar();
+    log('Editor: nuevo subtítulo en ' + fmtTime(s.start) + ' (pendiente de guardar).');
+  }
+
+  function insertAtCursor() {
+    CEP.call('getTime').then(function (r) { insertSub(r.t); })
+      .catch(function (e) { log('Error: ' + e.message, 'err'); });
+  }
+
+  function updateEditorBar() {
+    var n = editorSubs.filter(function (s) { return s.isNew || s.del || s.dText || s.dStart || s.dEnd; }).length;
+    $('btnSaveSubs').textContent = n ? 'Guardar (' + n + ')' : 'Guardar';
   }
 
   function loadSubs() {
     CEP.call('readSubs').then(function (r) {
-      editorSubs = r.subs;
-      renderEditor();
+      editorSubs = r.subs.map(function (s) {
+        return { start: s.start, end: s.end, text: s.text, orig: { start: s.start, end: s.end, text: s.text } };
+      });
+      editorSig = compInfo ? compInfo.markerSig : null;
+      $('subChanged').classList.add('hidden');
+      renderEditor(); updateEditorBar();
     }).catch(function (e) { $('subList').innerHTML = '<p class="status err">' + escapeHTML(e.message) + '</p>'; });
+  }
+
+  /** Llamado cada pocos segundos: si los marcadores cambiaron fuera del panel (Ctrl+Z, edición a mano…). */
+  function checkEditorSync() {
+    if (!compInfo || editorSig === null || compInfo.markerSig === editorSig) return;
+    if (!editorDirty()) { loadSubs(); return; }
+    $('subChanged').classList.remove('hidden');
   }
 
   function saveSubs() {
     if (busy) return;
-    var changed = editorSubs.filter(function (s) { return s.dirty; }).length;
-    var subs = editorSubs.filter(function (s) { return s.text.trim(); }).map(function (s) {
-      var end = Math.max(s.end, s.start + 0.04);
-      return { start: s.start, end: end, text: s.text.trim() };
-    }).sort(function (a, b) { return a.start - b.start; });
+    var changes = [], inserts = [];
+    editorSubs.forEach(function (s) {
+      var emptied = !String(s.text).trim();
+      if (s.isNew) { if (!emptied) inserts.push({ start: s.start, end: Math.max(s.end, s.start + 0.04), text: s.text.trim() }); return; }
+      if (s.del || emptied) { changes.push({ orig: s.orig, del: true }); return; }
+      if (!(s.dText || s.dStart || s.dEnd)) return;
+      var c = { orig: s.orig };
+      if (s.dText) c.text = s.text.trim();
+      if (s.dStart) c.start = s.start;
+      if (s.dEnd) c.end = Math.max(s.end, s.start + 0.04);
+      changes.push(c);
+    });
+    if (!changes.length && !inserts.length) { log('Editor: no hay cambios que guardar.'); return; }
     setBusy(true);
-    CEP.call('writeSubs', { subs: subs }).then(function () {
-      log('Editor: guardados ' + changed + ' subtítulos modificados (' + subs.length + ' en total).', 'ok');
-      loadSubs();
-    }).catch(function (e) { log('Error al guardar en el editor: ' + e.message, 'err'); alert(e.message); })
+    CEP.call('patchSubs', { changes: changes, inserts: inserts }).then(function (r) {
+      log('Editor: guardados ' + changes.length + ' cambios y ' + inserts.length + ' subtítulos nuevos (' + r.count + ' en total). Se puede deshacer con Ctrl+Z en ' + HOST_NAME + '.', 'ok');
+      if (r.missing) log('Editor: ' + r.missing + ' subtítulo(s) ya no existían en la capa y se omitieron.', 'warn');
+      return refreshComp();
+    }).then(function () { loadSubs(); })
+      .catch(function (e) { log('Error al guardar en el editor: ' + e.message, 'err'); alert(e.message); })
       .then(function () { setBusy(false); });
   }
 
@@ -817,6 +897,8 @@
 
     // Editar
     $('btnLoadSubs').onclick = loadSubs;
+    $('btnAddSub').onclick = insertAtCursor;
+    $('subReload').onclick = loadSubs;
     $('btnSaveSubs').onclick = saveSubs;
     $('subSearch').oninput = renderEditor;
 
@@ -853,16 +935,29 @@
     };
     $('openLimits').onclick = function () { CEP.openURL('https://aistudio.google.com/usage'); };
 
-    CEP.ensureHost().then(function () {
-      return refreshComp();
-    }).then(function () {
-      // Ancho por defecto: 80% de la composición la primera vez
-      if (!Config.getSettings().boxWidth && compInfo && compInfo.comp) {
-        $('boxWidth').value = Math.round(compInfo.comp.width * 0.8);
-        $('fontSize').value = Math.round(compInfo.comp.height * 0.065);
-      }
-      return loadFonts();
-    });
+    document.title = 'AutoSub · ' + HOST_NAME;
+    log('Programa: ' + HOST_NAME + '.');
+    function connectHost() {
+      return CEP.ensureHost().then(function () {
+        if (CEP.host === 'effectcraft') { job('Conectado con EffectCraft', 1, 'ok'); log('Conectado con EffectCraft.', 'ok'); }
+        return refreshComp();
+      }).then(function () {
+        // Ancho por defecto: 80% de la composición la primera vez
+        if (!Config.getSettings().boxWidth && compInfo && compInfo.comp) {
+          $('boxWidth').value = Math.round(compInfo.comp.width * 0.8);
+          $('fontSize').value = Math.round(compInfo.comp.height * 0.065);
+        }
+        return loadFonts();
+      }).catch(function (e) {
+        log('Error de conexión: ' + e.message, 'err');
+        job('✖ ' + e.message, 1, 'err');
+        var a = document.createElement('a');
+        a.textContent = ' Reintentar'; a.style.cursor = 'pointer'; a.style.color = 'var(--accent2)';
+        a.onclick = connectHost;
+        $('jobText').appendChild(a);
+      });
+    }
+    connectHost();
     setInterval(refreshComp, 3000);
     setInterval(updateQuota, 30000);
 

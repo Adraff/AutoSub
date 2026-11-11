@@ -144,7 +144,9 @@ var AutoSub = (function () {
   var EXPR_TEXT =
     '// AutoSub: muestra el marcador activo. Usa | en el marcador para saltar de linea.\n' +
     EXPR_FIND_MARKER +
-    '(k ? k.comment.replace(/\\s*\\|\\s*/g, "\\r") : "");';
+    // Sin barras invertidas: EffectCraft las interpreta de otra forma al guardar la expresion
+    'var CR = String.fromCharCode(13);\n' +
+    '(k ? k.comment.split(" | ").join(CR).split("|").join(CR) : "");';
 
   var EXPR_OPACITY =
     '// AutoSub: fundido de entrada/salida\n' +
@@ -376,9 +378,21 @@ var AutoSub = (function () {
       subLayer: sub ? sub.name : null,
       subFont: sub ? textDocProp(sub).value.font : null,
       hasWords: !!(store && store.words && store.words.length),
+      markerSig: sub ? markerSignature(sub) : '',
       savedSettings: store ? store.settings : null
     };
   };
+
+  /** Huella de los marcadores: cambia si se editan en la linea de tiempo o con Ctrl+Z. */
+  function markerSignature(layer) {
+    var mk = layer.property('ADBE Marker'), n = mk.numKeys, h = 0;
+    for (var i = 1; i <= n; i++) {
+      var v = mk.keyValue(i), c = String(v.comment);
+      h = (h * 31 + Math.round(mk.keyTime(i) * 1000) + Math.round(v.duration * 1000) * 7 + c.length * 13) % 1000000007;
+      for (var j = 0; j < c.length; j += 5) h = (h * 17 + c.charCodeAt(j)) % 1000000007;
+    }
+    return n + ':' + h;
+  }
 
   /**
    * Renderiza SOLO AUDIO a un archivo temporal (AIFF o WAV):
@@ -472,6 +486,43 @@ var AutoSub = (function () {
     var outFile = new File(outPath);
     if (!outFile.exists) throw new Error('El render de audio no gener\u00f3 ning\u00fan archivo.');
     return { path: outFile.fsName, offset: start, duration: dur };
+  };
+
+  /**
+   * EffectCraft: prepara el render de audio (tramo de tiempo y, si se pide una capa, silencia las demas).
+   * El render lo hace el panel con los comandos de EffectCraft; luego llama a audioRestore.
+   */
+  api.audioPlan = function (a) {
+    var comp = activeComp();
+    var i, start = comp.workAreaStart, dur = comp.workAreaDuration, restore = [];
+    if (a.layerIndex) {
+      var target = comp.layer(a.layerIndex);
+      if (!target || !target.hasAudio) throw new Error('La capa seleccionada no tiene audio.');
+      start = Math.max(0, target.inPoint);
+      dur = Math.min(comp.duration, target.outPoint) - start;
+      for (i = 1; i <= comp.numLayers; i++) {
+        var ly = comp.layer(i);
+        if (!ly.hasAudio && !ly.solo) continue;
+        restore.push({ i: i, audio: ly.hasAudio ? ly.audioEnabled : null, solo: ly.solo });
+        try { if (ly.solo) ly.solo = false; } catch (e0) {}
+        if (ly.hasAudio) ly.audioEnabled = (ly === target);
+      }
+    } else {
+      var hasAudio = false;
+      for (i = 1; i <= comp.numLayers; i++) if (comp.layer(i).hasAudio && comp.layer(i).audioEnabled) { hasAudio = true; break; }
+      if (!hasAudio) throw new Error('La composición no tiene capas con audio activado.');
+    }
+    return { compName: comp.name, start: start, duration: dur, restore: restore };
+  };
+
+  api.audioRestore = function (a) {
+    var comp = activeComp(), r = a.restore || [];
+    for (var i = 0; i < r.length; i++) {
+      var ly = comp.layer(r[i].i);
+      try { if (r[i].audio !== null) ly.audioEnabled = r[i].audio; } catch (e1) {}
+      try { ly.solo = r[i].solo; } catch (e2) {}
+    }
+    return true;
   };
 
   /** Datos del archivo original de la capa seleccionada. */
@@ -625,13 +676,87 @@ var AutoSub = (function () {
     return api.apply({ segments: a.subs || [] });
   };
 
+  function toPanelText(c) { return String(c).replace(/\s*\|\s*/g, '\n'); }
+  function toMarkerText(t) { return String(t).replace(/\r\n?|\n/g, ' | '); }
+
+  /**
+   * Aplica SOLO los cambios hechos en el editor del panel sobre el estado ACTUAL de los marcadores.
+   * Asi se respetan los ajustes hechos a mano en la linea de tiempo (arrastrar marcadores o su duracion)
+   * despues de cargar el editor. Cada cambio identifica su marcador por el texto y el tiempo originales.
+   * a = { changes: [{ orig:{start,text}, text?, start?, end?, del? }], inserts: [{start,end,text}] }
+   */
+  api.patchSubs = function (a) {
+    var comp = activeComp();
+    var layer = requireSubLayer(comp);
+    var mk = layer.property('ADBE Marker');
+    var cur = [], i;
+    for (i = 1; i <= mk.numKeys; i++) {
+      var v = mk.keyValue(i);
+      cur.push({ t: mk.keyTime(i), d: v.duration, c: String(v.comment), used: false, del: false });
+    }
+
+    function find(orig) {
+      var best = -1, bestD = 1e9, k, d;
+      for (k = 0; k < cur.length; k++) {   // mismo texto y mismo tiempo
+        if (cur[k].used) continue;
+        d = Math.abs(cur[k].t - orig.start);
+        if (toPanelText(cur[k].c) === orig.text && d < 0.02) return k;
+      }
+      for (k = 0; k < cur.length; k++) {   // mismo texto (el marcador se movio a mano)
+        if (cur[k].used || toPanelText(cur[k].c) !== orig.text) continue;
+        d = Math.abs(cur[k].t - orig.start);
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      if (best >= 0) return best;
+      for (k = 0; k < cur.length; k++) {   // mismo tiempo (el texto se cambio en la linea de tiempo)
+        if (!cur[k].used && Math.abs(cur[k].t - orig.start) < 0.02) return k;
+      }
+      return -1;
+    }
+
+    var missing = 0, changes = a.changes || [];
+    for (i = 0; i < changes.length; i++) {
+      var ch = changes[i], k = find(ch.orig);
+      if (k < 0) { missing++; continue; }
+      var m = cur[k];
+      m.used = true;
+      if (ch.del) { m.del = true; continue; }
+      if (ch.text != null) m.c = toMarkerText(ch.text);
+      if (ch.start != null) {
+        var end = m.t + m.d;
+        m.t = Math.max(0, Number(ch.start));
+        if (ch.end == null) m.d = Math.max(0.04, end - m.t);
+      }
+      if (ch.end != null) m.d = Math.max(0.04, Number(ch.end) - m.t);
+    }
+    var ins = a.inserts || [];
+    for (i = 0; i < ins.length; i++) {
+      cur.push({ t: Math.max(0, Number(ins[i].start)), d: Math.max(0.04, ins[i].end - ins[i].start), c: toMarkerText(ins[i].text) });
+    }
+
+    var final = [];
+    for (i = 0; i < cur.length; i++) if (!cur[i].del) final.push(cur[i]);
+    final.sort(function (x, y) { return x.t - y.t; });
+    for (i = mk.numKeys; i >= 1; i--) mk.removeKey(i);
+    for (i = 0; i < final.length; i++) {
+      var mv = new MarkerValue(final[i].c);
+      mv.duration = final[i].d;
+      mk.setValueAtTime(final[i].t, mv);
+    }
+    return { count: final.length, missing: missing };
+  };
+
+  api.getTime = function () {
+    return { t: activeComp().time };
+  };
+
   api.gotoTime = function (a) {
     var comp = activeComp();
     comp.time = Math.max(0, Math.min(comp.duration, Number(a.t) || 0));
     return true;
   };
 
-  var MUTATING = { ensureLayer: 1, apply: 1, writeSubs: 1, measure: 1, countLines: 1, renderAudio: 1 };
+  var MUTATING = { ensureLayer: 1, apply: 1, writeSubs: 1, patchSubs: 1, measure: 1, countLines: 1, renderAudio: 1 };
 
   return {
     dispatch: function (fn, argsJSON) {

@@ -1,8 +1,8 @@
-# AutoSub: subtítulos automáticos con IA para After Effects
+# AutoSub: subtítulos automáticos con IA para After Effects y EffectCraft
 
 [English](README.md) · **Español**
 
-**AutoSub** es un panel gratuito y de código abierto para **Adobe After Effects**. Escucha el audio de tu composición, lo transcribe con la inteligencia artificial **Google Gemini** (usando tu propia API key gratuita) y crea los subtítulos sincronizados directamente en la línea de tiempo.
+**AutoSub** es un panel gratuito y de código abierto para **Adobe After Effects** y **[EffectCraft](https://github.com/storytold/effectcraft)**. Escucha el audio de tu composición, lo transcribe con la inteligencia artificial **Google Gemini** (usando tu propia API key gratuita) y crea los subtítulos sincronizados directamente en la línea de tiempo.
 
 > 🆓 **Libre y gratuito.** Puedes usarlo, compartirlo, modificarlo y mejorarlo sin pagar nada (licencia GPL v3). Solo necesitas una API key gratuita de Google Gemini, que cada persona crea en un minuto con su cuenta de Google.
 >
@@ -12,6 +12,8 @@
 
 ## ✨ Qué hace
 
+- **Funciona en After Effects y en EffectCraft:** el mismo panel y los mismos subtítulos en los dos programas.
+- **Cortes como los haría una persona:** la IA separa el habla en frases con sentido y AutoSub decide dónde cortar como un subtitulador: en comas y pausas, sin dejar palabras sueltas ni terminar en "de", "la", "y"…
 - **Transcripción automática** del audio de la composición (o del archivo de una capa), con tiempos por palabra.
 - **Ajuste fino de la sincronización:** analiza el audio real para colocar cada frase en el momento exacto en que se oye y respetar los silencios.
 - **Todos los subtítulos se controlan a la vez:** viven en una sola capa de texto. Si cambias la fuente, el tamaño, el color o el trazo, el cambio se aplica a todos.
@@ -21,7 +23,7 @@
 - **Silencios:** puedes elegir si el subtítulo sigue en pantalla mientras nadie habla o desaparece.
 - **Desfase global:** con un control adelantas o retrasas todos los subtítulos.
 - **Efectos:** caja de fondo opcional que se ajusta al texto, fundido y efecto "pop".
-- **Editor integrado:** corrige el texto y los tiempos de cada subtítulo.
+- **Editor integrado:** corrige el texto y los tiempos de cada subtítulo, crea uno nuevo en el cursor o después de otro, y elimina los que sobren. Al guardar solo se aplican tus cambios, así que los ajustes hechos a mano en la línea de tiempo se respetan, y todo se puede deshacer con Ctrl+Z (el editor se actualiza solo).
 - **Exportación** a **SRT**, **WebVTT**, **TXT** o **JSON** (con tiempos por palabra).
 - **Selector de modelos:** los gratuitos aparecen en verde y el más eficiente va marcado con ★. Los de pago o los que gastan tokens de más aparecen en gris.
 - **Barra de cuota:** muestra cuántas peticiones gratuitas te quedan hoy y cuánto falta para que se recarguen.
@@ -40,12 +42,18 @@
 
 El instalador copia el panel en `%APPDATA%\Adobe\CEP\extensions\com.autosub.ae` (solo para tu usuario, sin permisos de administrador). También activa `PlayerDebugMode`, que es lo que permite a After Effects cargar paneles sin firmar. Para desinstalar, vuelve a abrirlo y pulsa **Desinstalar**.
 
-### macOS
+### EffectCraft (Windows)
+1. Ejecuta el mismo **`AutoSub-Installer.exe`** y marca **EffectCraft**.
+2. Abre **AutoSub para EffectCraft** desde el menú Inicio o el Escritorio. Abre EffectCraft (con su canal de control activado) y muestra el panel en su propia ventana.
+
+> EffectCraft no tiene paneles HTML como After Effects, así que AutoSub se comunica con él por su canal de control local (solo 127.0.0.1) y su scripting compatible con After Effects. Si EffectCraft ya está abierto sin el canal de control, ciérralo y pulsa *Reintentar*. EffectCraft todavía no permite centrar el texto en vertical dentro de las cajas de párrafo, así que ahí el texto queda alineado arriba en la caja.
+
+### macOS (After Effects)
 1. Descarga **`AutoSub-macOS.zip`** desde [**Releases**](../../releases/latest) y descomprímelo.
 2. Haz doble clic en `Instalar-AutoSub-mac.command`. Si macOS lo bloquea, haz clic derecho > Abrir.
 
 ### Requisitos
-- After Effects 2019 (v16) o posterior. Se ha probado en 2025 y 2026.
+- After Effects 2019 (v16) o posterior (probado en 2025 y 2026), y/o EffectCraft 0.24 o posterior en Windows.
 - Conexión a internet y una API key gratuita de Google Gemini.
 
 ## 🔑 API key gratuita de Gemini
@@ -94,10 +102,12 @@ extension/            Panel CEP (lo que se instala)
   js/quota.js         Contador de uso y cuota diaria
   js/secret.js        Cifrado de la API key (DPAPI / Llavero)
   js/config.js        Configuración del usuario
-  js/cep.js           Puente con After Effects (sin librerías externas)
+  js/cep.js           Puente con el programa: After Effects (CEP) o EffectCraft
+  js/bridge.js        Modo EffectCraft: utilidades tipo Node sobre el puente local
   jsx/host.jsx        Script de After Effects: capa, marcadores, expresiones, render de audio
 installer/
   Installer.cs        Instalador de Windows (C#, se compila con el csc.exe que trae Windows)
+  AutoSubEffectCraft.cs  "AutoSub para EffectCraft": puente local + ventana del panel
   build.ps1           Genera dist/AutoSub-Installer.exe y dist/AutoSub-macOS.zip
   Instalar-AutoSub-mac.command
 ```

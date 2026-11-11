@@ -29,7 +29,10 @@
 
   var PS_HEAD = 'Add-Type -AssemblyName System.Security; $e=[Text.Encoding]::UTF8.GetBytes("' + ENTROPY + '"); ';
 
+  var bridge = root.AutoSubBridge || null;
+
   function protect(plain) {
+    if (bridge) return { scheme: 'dpapi', data: bridge.protect(plain) }; // mismo cifrado DPAPI, hecho por el puente
     if (process.platform === 'win32') {
       var data = ps(PS_HEAD +
         '$b=[Text.Encoding]::UTF8.GetBytes($env:AUTOSUB_IN); ' +
@@ -46,6 +49,7 @@
 
   function unprotect(obj) {
     if (!obj || !obj.scheme) return '';
+    if (obj.scheme === 'dpapi' && bridge) return bridge.unprotect(obj.data);
     if (obj.scheme === 'dpapi') {
       // Se devuelve en base64 para no depender de la codificación de la consola
       var b64 = ps(PS_HEAD +

@@ -1,8 +1,8 @@
-# AutoSub: AI-powered automatic subtitles for After Effects
+# AutoSub: AI-powered automatic subtitles for After Effects and EffectCraft
 
 **English** · [Español](README.es.md)
 
-**AutoSub** is a free, open-source panel for **Adobe After Effects**. It listens to your composition's audio, transcribes it with **Google Gemini** AI (using your own free API key) and creates synced subtitles directly on your timeline.
+**AutoSub** is a free, open-source panel for **Adobe After Effects** and **[EffectCraft](https://github.com/storytold/effectcraft)**. It listens to your composition's audio, transcribes it with **Google Gemini** AI (using your own free API key) and creates synced subtitles directly on your timeline.
 
 > 🆓 **Free and open.** You can use, share, modify and improve it at no cost (GPL v3 license). All you need is a free Google Gemini API key, which anyone can create in a minute with a Google account.
 >
@@ -12,6 +12,8 @@
 
 ## ✨ Features
 
+- **Works in After Effects and EffectCraft:** the same panel and the same subtitles in both programs.
+- **Human-like subtitle breaks:** the AI splits speech into meaningful phrases and AutoSub chooses where to cut like a subtitler would: at commas and pauses, never leaving a lone word or ending on "de", "the", "of"…
 - **Automatic transcription** of the composition's audio (or of a layer's source file), with per-word timing.
 - **Fine sync adjustment:** analyzes the real audio to place each phrase exactly where it is heard and to respect silences.
 - **Control every subtitle at once:** all subtitles live in a single text layer. Change the font, size, color or stroke and it applies to all of them.
@@ -21,7 +23,7 @@
 - **Silences:** choose whether a subtitle stays on screen while nobody is speaking or disappears.
 - **Global offset:** one control shifts every subtitle earlier or later.
 - **Effects:** optional background box that fits the text, fade and "pop" animation.
-- **Built-in editor:** fix the text and timing of each subtitle.
+- **Built-in editor:** fix the text and timing of each subtitle, add a subtitle at the playhead or after any other one, and delete subtitles. Saving only applies your changes, so manual adjustments made on the timeline are kept, and everything can be undone with Ctrl+Z (the editor refreshes itself).
 - **Export** to **SRT**, **WebVTT**, **TXT** or **JSON** (with per-word timing).
 - **Model picker:** free models are shown in green and the most efficient one is marked with ★. Paid models, or models that waste tokens, are shown in grey.
 - **Quota bar:** shows how many free requests you have left today and when they refill.
@@ -42,12 +44,18 @@
 
 The installer copies the panel to `%APPDATA%\Adobe\CEP\extensions\com.autosub.ae` (for your user only, no administrator rights needed). It also enables `PlayerDebugMode`, which lets After Effects load unsigned panels. To uninstall, run it again and click **Desinstalar** (Uninstall).
 
-### macOS
+### EffectCraft (Windows)
+1. Run the same **`AutoSub-Installer.exe`** and tick **EffectCraft**.
+2. Open **AutoSub para EffectCraft** from the Start menu or the Desktop. It opens EffectCraft (with its control channel enabled) and shows the panel in its own window.
+
+> EffectCraft has no HTML panels like After Effects, so AutoSub talks to it through EffectCraft's local control channel (127.0.0.1 only) and its After Effects-compatible scripting. If EffectCraft is already open without the control channel, close it and click *Reintentar*. EffectCraft does not support vertical alignment inside paragraph boxes yet, so there the text is top-aligned in the box.
+
+### macOS (After Effects)
 1. Download **`AutoSub-macOS.zip`** from [**Releases**](../../releases/latest) and unzip it.
 2. Double-click `Instalar-AutoSub-mac.command`. If macOS blocks it, right-click > Open.
 
 ### Requirements
-- After Effects 2019 (v16) or later. Tested on 2025 and 2026.
+- After Effects 2019 (v16) or later (tested on 2025 and 2026), and/or EffectCraft 0.24 or later on Windows.
 - An internet connection and a free Google Gemini API key.
 
 ## 🔑 Free Gemini API key
@@ -96,10 +104,12 @@ extension/            CEP panel (what gets installed)
   js/quota.js         Usage counter and daily quota
   js/secret.js        API key encryption (DPAPI / Keychain)
   js/config.js        User configuration
-  js/cep.js           Bridge to After Effects (no external libraries)
+  js/cep.js           Bridge to the host app: After Effects (CEP) or EffectCraft
+  js/bridge.js        EffectCraft mode: Node-like helpers on top of the local bridge
   jsx/host.jsx        After Effects script: layer, markers, expressions, audio render
 installer/
   Installer.cs        Windows installer (C#, built with the csc.exe that ships with Windows)
+  AutoSubEffectCraft.cs  "AutoSub para EffectCraft": local bridge + panel window
   build.ps1           Builds dist/AutoSub-Installer.exe and dist/AutoSub-macOS.zip
   Instalar-AutoSub-mac.command
 ```

@@ -45,8 +45,46 @@
     return best;
   }
 
+  // Palabras tras las que no se debe cortar un subtítulo (es, en, pt, fr, it, ca)
+  var FUNCTION_WORDS = {};
+  ('de del la el los las lo le les un una unos unas y e o u ni que a al en con por para sin sobre entre hasta desde ' +
+   'hacia según su sus mi mis tu tus nuestro nuestra se me te nos os muy más tan como pero si cuando donde porque ' +
+   'the a an of to in on at for and or but with from by into my your his her its our their this that these those is are was ' +
+   'do da dos das no na nos nas um uma ao pelo pela em com mas ' +
+   'le la les un une des du au aux et ou mais pour par dans sur avec ' +
+   'il lo gli i una di da del della nel con per ma ' +
+   'els les per amb').split(' ').forEach(function (w) { if (w) FUNCTION_WORDS[w] = 1; });
+
+  function bare(w) { return String(w).toLowerCase().replace(/^[¿¡"'«“(\[]+|[.,;:!?…"'»”)\]]+$/g, ''); }
+
+  /** Coste de cortar el subtítulo después de la palabra j (cuanto menor, más natural). */
+  function breakCost(words, j, gapBreak) {
+    var w = words[j].w, next = words[j + 1];
+    var c = 10;
+    if (/[.!?…]["'»”)\]]*$/.test(w)) c = 0;
+    else if (/[,;:—–]["'»”)\]]*$/.test(w)) c = 0.5;
+    else {
+      if (words[j].p != null && next.p != null && words[j].p !== next.p) c = Math.min(c, 1.5);
+      var gap = next.s - words[j].e;
+      if (gap >= (gapBreak || 0.5)) c = 0;          // pausa clara: el mejor sitio para cortar
+      else if (gap >= 0.25) c = Math.min(c, 1);
+      if (FUNCTION_WORDS[bare(w)]) c += 9;
+      if (/^[A-ZÁÉÍÓÚÑ]/.test(w) && /^[A-ZÁÉÍÓÚÑ]/.test(next.w)) c += 6; // nombres propios: "After Effects"
+    }
+    return c;
+  }
+
+  /** Coste por tamaño: evita subtítulos de una o dos palabras salvo que no haya otra opción. */
+  function sizeCost(n, wholeChunk, firstWord) {
+    if (wholeChunk) return 0;
+    if (n === 1) return 14 + (FUNCTION_WORDS[bare(firstWord)] ? 6 : 0);
+    if (n === 2) return 4;
+    if (n === 3) return 1;
+    return 0;
+  }
+
   /**
-   * words: [{w,s,e}]  (tiempos en segundos de composición)
+   * words: [{w,s,e,p?}]  (tiempos en segundos de composición; p = número de frase de la IA)
    * opts:  { boxWidth, maxLines, spaceWidth, widths:{palabra:px}, avgCharWidth,
    *          gapBreak, maxDuration, breakPunct, keepSilence, tail, minGap, minDuration, endTime }
    * Devuelve [{ start, end, text, lines:[...], w0, w1 }]
@@ -67,41 +105,55 @@
     var widths = o.widths || {};
     var forced = o.forceBreakBefore || {}; // índices de palabra que deben empezar subtítulo nuevo
 
-    // 1) Agrupar palabras en bloques. Las líneas máximas son un LÍMITE: se simula cómo
-    //    After Effects reparte el texto de corrido en la caja y solo se corta el subtítulo
-    //    cuando la siguiente palabra ya no cabría en las líneas permitidas.
-    var groups = [], cur = null;
+    // 1) Cortes obligatorios: pausas MUY largas, fin de frase (si está activado) y cortes forzados.
+    //    Una pausa normal (>= "silencio que corta") no obliga a cortar: es el mejor sitio para hacerlo,
+    //    pero si dejaría una palabra suelta se prefiere mantenerla con su frase.
+    var hardGap = Math.max(1.5, gapBreak * 2.5);
+    var chunks = [], start = 0;
+    for (var i = 1; i <= words.length; i++) {
+      if (i === words.length || forced[i] || words[i].s - words[i - 1].e > hardGap ||
+          (o.breakPunct && SENTENCE_END.test(words[i - 1].w))) {
+        chunks.push([start, i - 1]);
+        start = i;
+      }
+    }
 
-    function flush() { if (cur && cur.idx.length) groups.push(cur); cur = null; }
-
-    for (var i = 0; i < words.length; i++) {
-      var wd = words[i];
-      var wpx = wordWidth(wd.w, widths, avgChar);
-
-      if (cur) {
-        var prev = words[cur.idx[cur.idx.length - 1]];
-        var first = words[cur.idx[0]];
-        if (forced[i] ||
-            wd.s - prev.e > gapBreak ||
-            wd.e - first.s > maxDur ||
-            (o.breakPunct && SENTENCE_END.test(prev.w))) {
-          flush();
+    // 2) Dentro de cada tramo, elegir los cortes como lo haría una persona (programación dinámica):
+    //    - cada subtítulo cabe en las líneas máximas y en la duración máxima,
+    //    - se prefiere cortar en comas, pausas y en los límites de frase que marcó la IA,
+    //    - se evita cortar justo después de artículos/preposiciones ("de", "la", "y"…),
+    //    - se evitan los subtítulos de una sola palabra ("huérfanas") y los muy cortos,
+    //    - y se prefieren menos subtítulos (aprovechando el espacio de la caja).
+    var groups = [];
+    chunks.forEach(function (ch) {
+      var a0 = ch[0], len = ch[1] - ch[0] + 1;
+      var best = [0], back = [-1];
+      for (var k = 1; k <= len; k++) { best.push(Infinity); back.push(-1); }
+      var linesOf = {};
+      for (var a = 0; a < len; a++) {
+        if (best[a] === Infinity) continue;
+        var lines = 1, lineW = 0;
+        for (var b = a; b < len; b++) {
+          var wd = words[a0 + b], wpx = wordWidth(wd.w, widths, avgChar);
+          var need = lineW ? lineW + spaceW + wpx : wpx;
+          if (lineW === 0 || need <= boxW) lineW = need;
+          else { lines++; lineW = wpx; }
+          if (lines > maxLines && b > a) break;
+          if (b > a && wd.e - words[a0 + a].s > maxDur) break;
+          var n = b - a + 1;
+          var cost = best[a] + 2 + sizeCost(n, a === 0 && b === len - 1, words[a0 + a].w) +
+            (b < len - 1 ? breakCost(words, a0 + b, gapBreak) : 0);
+          if (cost < best[b + 1]) { best[b + 1] = cost; back[b + 1] = a; linesOf[b + 1] = lines; }
         }
       }
-      if (!cur) cur = { idx: [], lines: 1, lineW: 0 };
-
-      var need = cur.lineW ? cur.lineW + spaceW + wpx : wpx;
-      if (cur.lineW === 0 || need <= boxW) {
-        cur.lineW = need;
-      } else if (cur.lines < maxLines) {
-        cur.lines++; cur.lineW = wpx;
-      } else {
-        flush();
-        cur = { idx: [], lines: 1, lineW: wpx };
-      }
-      cur.idx.push(i);
-    }
-    flush();
+      var cuts = [], e = len;
+      while (e > 0) { var s0 = back[e]; cuts.unshift([s0, e - 1, linesOf[e]]); e = s0; }
+      cuts.forEach(function (c) {
+        var idx = [];
+        for (var x = c[0]; x <= c[1]; x++) idx.push(a0 + x);
+        groups.push({ idx: idx, lines: Math.min(c[2] || 1, maxLines) });
+      });
+    });
 
     // 2) Texto de corrido (sin saltos manuales): la caja de párrafo hace el ajuste de línea
     var segs = groups.map(function (g) {

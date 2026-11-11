@@ -15,7 +15,17 @@
   var fs = require('fs');
   var URL_BASE = 'https://generativelanguage.googleapis.com';
 
+  var bridge = global.AutoSubBridge || null;
+
   function request(method, url, headers, body, onUploadProgress) {
+    // Modo EffectCraft: la petición HTTPS la hace el puente local (puede enviar un archivo entero)
+    if (bridge) {
+      var opts = { method: method, url: url, headers: headers || {} };
+      if (body && body.file) opts.bodyFile = body.file;
+      else if (body != null) opts.body = String(body);
+      return bridge.http(opts).then(function (r) { if (onUploadProgress) onUploadProgress(1); return r; });
+    }
+    if (body && body.file) body = fs.createReadStream(body.file);
     return new Promise(function (resolve, reject) {
       var u = new (require('url').URL)(url);
       var req = https.request({
@@ -138,7 +148,7 @@
         'Content-Length': String(size),
         'X-Goog-Upload-Offset': '0',
         'X-Goog-Upload-Command': 'upload, finalize'
-      }, fs.createReadStream(filePath), onProgress);
+      }, { file: filePath }, onProgress);
     }).then(function (res) {
       if (res.status !== 200) throw apiError(res);
       return JSON.parse(res.body).file;
@@ -178,7 +188,7 @@
       'Never translate. Never summarize. Do not skip repeated words.',
       'Use natural punctuation and capitalization.',
       'Ignore music, noises and non-speech sounds (do not output tags like [music]).',
-      'Split the speech into short phrases of 1 to 8 words, cutting at natural pauses.',
+      'Split the speech into short phrases of 1 to 8 words, cutting at natural pauses and meaningful units, like a professional subtitler (never end a phrase on an article, preposition or conjunction such as "de", "la", "y", "the", "of").',
       'For every phrase give "s" (start) and "e" (end) in SECONDS from the beginning of the audio, with 2 decimals (e.g. 12.34), and the text in "x".',
       'Times must match exactly when the phrase is spoken, be strictly increasing and never beyond the end of the audio' +
         (duration ? ' (' + duration.toFixed(2) + ' s)' : '') + '.',
@@ -220,7 +230,7 @@
   /** Reparte cada frase en palabras con tiempos proporcionales a su longitud. */
   function phrasesToWords(phrases) {
     var words = [];
-    (phrases || []).forEach(function (ph) {
+    (phrases || []).forEach(function (ph, pi) {
       var ws = String(ph.x || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
       var s = Number(ph.s), e = Number(ph.e);
       if (!ws.length || isNaN(s)) return;
@@ -230,7 +240,7 @@
       ws.forEach(function (w) {
         var a = s + (e - s) * acc / tot;
         acc += w.length + 1;
-        words.push({ w: w, s: a, e: s + (e - s) * acc / tot });
+        words.push({ w: w, s: a, e: s + (e - s) * acc / tot, p: pi });
       });
     });
     return words;
@@ -244,7 +254,7 @@
       var s = Number(x.s), e = Number(x.e);
       if (!w || isNaN(s)) return;
       if (isNaN(e) || e < s) e = s + 0.25;
-      out.push({ w: w, s: s, e: e });
+      out.push({ w: w, s: s, e: e, p: x.p });
     });
     if (!out.length) return out;
 

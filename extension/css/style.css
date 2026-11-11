@@ -219,3 +219,10 @@ details[open] summary { color: var(--text); }
 @media (max-width: 230px) {
   .grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Editor: acciones por subtítulo y aviso de cambios externos */
+.sub { grid-template-columns: 22px 52px 1fr 20px; }
+.sub .acts { display: flex; flex-direction: column; gap: 2px; }
+.sub .acts .del:hover { color: var(--err); }
+.notice { background: rgba(224,168,58,.12); border: 1px solid rgba(224,168,58,.4); color: var(--warn); border-radius: 3px; padding: 4px 6px; margin-bottom: 5px; font-size: 10.5px; }
+.notice a { color: var(--accent2); text-decoration: underline; cursor: pointer; }
