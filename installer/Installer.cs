@@ -22,8 +22,8 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("AutoSub Installer")]
 [assembly: AssemblyProduct("AutoSub")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.4.1.0")]
+[assembly: AssemblyFileVersion("1.4.1.0")]
 
 namespace AutoSubInstaller
 {

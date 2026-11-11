@@ -734,16 +734,16 @@ var AutoSub = (function () {
       cur.push({ t: Math.max(0, Number(ins[i].start)), d: Math.max(0.04, ins[i].end - ins[i].start), c: toMarkerText(ins[i].text) });
     }
 
-    var final = [];
-    for (i = 0; i < cur.length; i++) if (!cur[i].del) final.push(cur[i]);
-    final.sort(function (x, y) { return x.t - y.t; });
+    var kept = [];
+    for (i = 0; i < cur.length; i++) if (!cur[i].del) kept.push(cur[i]);
+    kept.sort(function (x, y) { return x.t - y.t; });
     for (i = mk.numKeys; i >= 1; i--) mk.removeKey(i);
-    for (i = 0; i < final.length; i++) {
-      var mv = new MarkerValue(final[i].c);
-      mv.duration = final[i].d;
-      mk.setValueAtTime(final[i].t, mv);
+    for (i = 0; i < kept.length; i++) {
+      var mv = new MarkerValue(kept[i].c);
+      mv.duration = kept[i].d;
+      mk.setValueAtTime(kept[i].t, mv);
     }
-    return { count: final.length, missing: missing };
+    return { count: kept.length, missing: missing };
   };
 
   api.getTime = function () {
