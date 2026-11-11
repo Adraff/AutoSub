@@ -65,7 +65,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="gen" data-i18n="tab.gen"></button>
     <button class="tab" data-tab="edit" id="tabEdit" disabled data-i18n="tab.edit"></button>
-    <button class="tab" data-tab="export" data-i18n="tab.export"></button>
+    <button class="tab" data-tab="export" id="tabExport" disabled data-i18n="tab.export"></button>
     <button class="tab" data-tab="log"><span data-i18n="tab.log"></span><i id="logDot" class="dot hidden"></i></button>
     <button class="tab cfg" data-tab="settings" data-i18n-title="tab.settings.title">⚙<i id="keyDot" class="dot warn"></i></button>
   </nav>
@@ -148,9 +148,11 @@
         <div class="msel-list hidden" id="modelList"></div>
       </div>
       <div class="actionbar">
-        <button class="btn primary grow-btn" id="btnGenerate" data-i18n="gen.btnLiteral" data-i18n-title="gen.btnLiteral.title"></button>
-        <button class="btn accent2 grow-btn" id="btnInterpret" data-i18n="gen.btnInterp" data-i18n-title="gen.btnInterp.title"></button>
-        <button class="btn icon" id="btnReflow" data-i18n-title="gen.reflow.title">↻</button>
+        <button class="btn primary grow-btn" id="btnGenerate" data-i18n="gen.btn" data-i18n-title="gen.btn.title"></button>
+        <label class="pill" data-i18n-title="gen.btnInterp.title">
+          <input type="checkbox" id="interpret"><span class="pill-track"><span class="pill-knob"></span></span>
+          <span class="pill-label" data-i18n="gen.interpret"></span>
+        </label>
       </div>
 
       <div class="quota" id="quota">
@@ -159,13 +161,48 @@
       </div>
 
       <div id="job" class="job hidden">
-        <div class="job-row"><span id="jobText"></span><span id="jobPct"></span></div>
-        <div class="progress"><div class="bar" id="jobBar"></div></div>
+        <div class="job-row"><span class="jtext"></span><span class="jpct"></span></div>
+        <div class="progress"><div class="bar"></div></div>
       </div>
     </section>
 
     <!-- ============ EDITAR ============ -->
     <section id="tab-edit" class="panel">
+      <div class="target" id="editTarget"></div>
+      <div id="editBody">
+        <div class="stylebox">
+          <div class="grid">
+            <div class="f full"><span data-i18n="gen.font"></span>
+              <div class="inline">
+                <div class="fsel" id="eFontSel">
+                  <button class="fsel-btn" id="eFontBtn" type="button"><span class="fname" id="eFontName">—</span><span class="caret">▾</span></button>
+                  <div class="fsel-pop hidden" id="eFontPop">
+                    <input type="search" id="eFontSearch" data-i18n-ph="gen.fontSearch" autocomplete="off" spellcheck="false">
+                    <div class="fsel-list" id="eFontList"></div>
+                  </div>
+                </div>
+                <select id="eFontStyle" class="fstyle"></select>
+              </div>
+            </div>
+            <label class="f"><span data-i18n="edit.fontSize"></span><input type="number" id="eFontSize" min="8" step="1"></label>
+            <label class="f"><span data-i18n="gen.boxWidth"></span><input type="number" id="eBoxWidth" min="50" step="10"></label>
+            <div class="f"><span data-i18n="gen.maxLines"></span>
+              <div class="seg" id="eMaxLines">
+                <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button>
+              </div>
+            </div>
+            <div class="f"><span>&nbsp;</span><button class="btn full-w" id="btnReflow" data-i18n="edit.reflow" data-i18n-title="edit.reflow.title"></button></div>
+          </div>
+          <div class="checks">
+            <label><input type="checkbox" id="eStroke"> <span data-i18n="gen.stroke"></span></label>
+            <label data-i18n-title="gen.shadow.title"><input type="checkbox" id="eShadow"> <span data-i18n="gen.shadow"></span></label>
+            <label><input type="checkbox" id="eBg"> <span data-i18n="gen.bgBox"></span></label>
+          </div>
+          <div id="jobEdit" class="job hidden">
+            <div class="job-row"><span class="jtext"></span><span class="jpct"></span></div>
+            <div class="progress"><div class="bar"></div></div>
+          </div>
+        </div>
       <div class="toolbar">
         <input type="search" id="subSearch" data-i18n-ph="edit.search">
         <button class="btn" id="btnAddSub" data-i18n="edit.addHere" data-i18n-title="edit.addHere.title"></button>
@@ -175,10 +212,12 @@
       <div id="subChanged" class="notice hidden" data-i18n-html="edit.changed"></div>
       <div id="subList" class="sublist"><p class="muted" data-i18n="edit.none"></p></div>
       <p class="hint" data-i18n-html="edit.hint"></p>
+      </div>
     </section>
 
     <!-- ============ EXPORTAR ============ -->
     <section id="tab-export" class="panel">
+      <div class="target" id="exportTarget"></div>
       <div class="grid">
         <label class="f"><span data-i18n="exp.format"></span>
           <select id="exportFormat">
@@ -246,7 +285,7 @@
         <p class="hint" data-i18n="set.quotaHint"></p>
       </details>
 
-      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.5.0</p>
+      <p class="hint">Config: <code id="cfgPath"></code><br>AutoSub 1.6.0</p>
     </section>
   </main>
 

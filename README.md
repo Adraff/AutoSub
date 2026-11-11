@@ -13,7 +13,8 @@
 ## ✨ Features
 
 - **English and Spanish interface:** follows the After Effects language automatically, or choose it in Settings.
-- **Interpretive generation:** besides the literal transcription, a second button lets the AI understand the context and write clean subtitles, without fillers ("uhhh", "umm"), stutters, repetitions or mispronounced words.
+- **Interpretive mode:** a switch next to the Generate button lets the AI understand the context and write clean subtitles, without fillers ("uhhh", "umm"), stutters, repetitions or mispronounced words. Off by default (literal transcription).
+- **Several subtitle layers per composition:** every generation creates a new, independent layer, each with its own style and background box.
 - **Human-like subtitle breaks:** the AI splits speech into meaningful phrases and AutoSub chooses where to cut like a subtitler would: at commas and pauses, never leaving a lone word or ending on "de", "the", "of"…
 - **Automatic transcription** of the composition's audio (or of a layer's source file), with per-word timing.
 - **Fine sync adjustment:** analyzes the real audio to place each phrase exactly where it is heard and to respect silences.
@@ -26,7 +27,7 @@
 - **Silences:** choose whether a subtitle stays on screen while nobody is speaking or disappears.
 - **Global offset:** one control shifts every subtitle earlier or later.
 - **Effects:** optional background box that fits the text, fade and "pop" animation.
-- **Built-in editor:** fix the text and timing of each subtitle, add a subtitle at the playhead or after any other one, and delete subtitles. Saving only applies your changes, so manual adjustments made on the timeline are kept, and everything can be undone with Ctrl+Z (the editor refreshes itself).
+- **Built-in editor:** at the top, the style of the selected subtitle layer (typeface, size, box width, lines, stroke, shadow and background); below, its subtitles. Fix the text and timing of each subtitle, add a subtitle at the playhead or after any other one, and delete subtitles. Saving only applies your changes, so manual adjustments made on the timeline are kept, and everything can be undone with Ctrl+Z (the editor refreshes itself).
 - **Export** to **SRT**, **WebVTT**, **TXT** or **JSON** (with per-word timing).
 - **Model picker:** free models are shown in green and the most efficient one is marked with ★. Paid models, or models that waste tokens, are shown in grey.
 - **Quota bar:** shows how many free requests you have left today and when they refill.
@@ -66,9 +67,9 @@ No credit card is needed. The free tier has a daily request limit, which the pan
 
 1. Open your composition and set the **work area** to the part you want to subtitle.
 2. In the **Generar** (Generate) tab, choose the language, box width, number of lines and other options.
-3. Pick a green model (★ is recommended) and click **✦ Generate** (literal) or **✧ Interpretive** (clean, context-aware subtitles).
-4. To change the style, select the `AutoSub - Subtitles` layer and use the **Character** panel. Then click **↻** to recalculate the line breaks.
-5. Export from the **Exportar** (Export) tab.
+3. Pick a green model (★ is recommended), turn on **Interpretive** if you want clean, context-aware subtitles, and click **✦ Generate**. Each generation creates a new layer.
+4. To edit a layer, select it on the timeline and open the **Edit** tab (it unlocks once subtitles exist): its style is at the top and its subtitles below. You can also use the **Character** panel and then click **↻ Re-layout**.
+5. Export the selected layer from the **Export** tab.
 
 ### Layer controls (Effect Controls panel)
 | Control | What it does |

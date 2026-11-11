@@ -1,5 +1,11 @@
 /*
  * Lógica principal del panel AutoSub (After Effects).
+ *
+ *  - Generar: SOLO crea capas de subtítulos nuevas (cada generación es una capa propia).
+ *    Sus ajustes son los valores por defecto para la próxima generación y no tocan capas existentes.
+ *  - Editar: estilo y subtítulos de la capa de AutoSub seleccionada en la línea de tiempo
+ *    (o la única que haya). Así se pueden tener varias capas y editarlas por separado.
+ *  - Exportar: exporta la capa seleccionada.
  */
 (function () {
   'use strict';
@@ -42,7 +48,6 @@
   function setStatus(el, text, cls) { el.textContent = text; el.className = 'status ' + (cls || ''); }
 
   // ================================================================ LOG
-  // Todo queda en la pestaña "Log" y en el archivo autosub.log de la carpeta de configuración.
   var logEntries = [];
   var LOG_FILE = path.join(Config.dir(), 'autosub.log');
 
@@ -80,25 +85,30 @@
     document.body.removeChild(ta);
   }
 
-  // ================================================================ ESTADO DEL TRABAJO (Generar)
+  // ================================================================ ESTADO DEL TRABAJO
+  // Hay una barra de progreso en Generar (#job) y otra en Editar (#jobEdit).
   var fakeTimer = null;
+  var jobBoxId = 'job';
+
+  function jobEl(sel) { return $(jobBoxId).querySelector(sel); }
 
   /** Muestra qué se está haciendo y el porcentaje. p: 0..1, o null para ocultar. */
   function job(text, p, cls) {
     stopFake();
-    var box = $('job');
+    var box = $(jobBoxId);
     if (p === null) { box.classList.add('hidden'); return; }
     box.classList.remove('hidden');
-    $('jobText').className = cls || '';
+    var tx = jobEl('.jtext');
+    tx.className = 'jtext ' + (cls || '');
     if (cls === 'err') {
-      $('jobText').innerHTML = escapeHTML(text) + ' · <a id="jobLogLink">' + t('log.view') + '</a>';
-      $('jobLogLink').onclick = function () { showTab('log'); };
+      tx.innerHTML = escapeHTML(text) + ' · <a class="jlog">' + t('log.view') + '</a>';
+      tx.querySelector('.jlog').onclick = function () { showTab('log'); };
     } else {
-      $('jobText').textContent = text;
+      tx.textContent = text;
     }
-    $('jobPct').textContent = cls === 'err' ? '' : Math.round(p * 100) + '%';
-    $('jobBar').style.width = Math.round(p * 100) + '%';
-    $('jobBar').style.background = cls === 'err' ? 'var(--err)' : (cls === 'ok' ? 'var(--ok)' : '');
+    jobEl('.jpct').textContent = cls === 'err' ? '' : Math.round(p * 100) + '%';
+    jobEl('.bar').style.width = Math.round(p * 100) + '%';
+    jobEl('.bar').style.background = cls === 'err' ? 'var(--err)' : (cls === 'ok' ? 'var(--ok)' : '');
   }
 
   /** Progreso estimado mientras esperamos a la IA (Google no informa del avance). */
@@ -108,9 +118,9 @@
     fakeTimer = setInterval(function () {
       var el = (Date.now() - t0) / 1000;
       var p = from + (to - from) * (1 - Math.exp(-el / estSeconds));
-      $('jobText').textContent = text + ' · ' + Math.round(el) + ' s';
-      $('jobPct').textContent = Math.round(p * 100) + '%';
-      $('jobBar').style.width = Math.round(p * 100) + '%';
+      jobEl('.jtext').textContent = text + ' · ' + Math.round(el) + ' s';
+      jobEl('.jpct').textContent = Math.round(p * 100) + '%';
+      jobEl('.bar').style.width = Math.round(p * 100) + '%';
     }, 500);
   }
 
@@ -118,11 +128,10 @@
 
   function setBusy(b) {
     busy = b;
-    ['btnGenerate', 'btnInterpret', 'btnReflow', 'btnSaveSubs', 'btnExport'].forEach(function (id) { $(id).disabled = b; });
-    if (!b && compInfo) $('btnReflow').disabled = !compInfo.hasWords;
+    ['btnGenerate', 'btnReflow', 'btnSaveSubs', 'btnExport'].forEach(function (id) { $(id).disabled = b; });
   }
 
-  // ================================================================ AJUSTES
+  // ================================================================ AJUSTES (pestaña Generar)
   function readSettings() {
     var ml = document.querySelector('#maxLines button.on');
     var saved = Config.getSettings();
@@ -136,6 +145,7 @@
       background: $('bgBox').checked,
       stroke: $('stroke').checked,
       shadow: $('shadow').checked,
+      interpret: $('interpret').checked,
       keepSilence: $('keepSilence').checked,
       gapBreak: Number($('gapBreak').value) || 0.5,
       maxDuration: Number($('maxDuration').value) || 5,
@@ -155,16 +165,13 @@
     if (s.audioSource) $('audioSource').value = s.audioSource;
     if (s.language) $('language').value = OLD_LANG[s.language] || s.language;
     if (s.boxWidth) $('boxWidth').value = s.boxWidth;
-    if (s.maxLines) {
-      Array.prototype.forEach.call(document.querySelectorAll('#maxLines button'), function (b) {
-        b.classList.toggle('on', Number(b.getAttribute('data-v')) === Number(s.maxLines));
-      });
-    }
+    if (s.maxLines) setSeg('maxLines', s.maxLines);
     if (s.fontSize) $('fontSize').value = s.fontSize;
     if (s.bottomPad != null) $('bottomPad').value = s.bottomPad;
     if ('background' in s) $('bgBox').checked = !!s.background;
     if ('stroke' in s) $('stroke').checked = !!s.stroke;
     if ('shadow' in s) $('shadow').checked = !!s.shadow;
+    $('interpret').checked = !!s.interpret;
     if ('keepSilence' in s) $('keepSilence').checked = !!s.keepSilence;
     if (s.gapBreak) $('gapBreak').value = s.gapBreak;
     if (s.maxDuration) $('maxDuration').value = s.maxDuration;
@@ -179,18 +186,28 @@
 
   function persistSettings() { Config.setSettings(readSettings()); }
 
+  function setSeg(id, v) {
+    Array.prototype.forEach.call(document.querySelectorAll('#' + id + ' button'), function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-v')) === Number(v));
+    });
+  }
+  function getSeg(id) {
+    var b = document.querySelector('#' + id + ' button.on');
+    return b ? Number(b.getAttribute('data-v')) : 2;
+  }
+
   // ================================================================ IDIOMA DEL PANEL
-  /** Aplica el idioma a todos los textos fijos y vuelve a pintar los dinámicos. */
   function applyLanguage() {
     I18N.setLang(Config.getSettings().uiLang || 'auto');
     I18N.apply(document);
     updateKeyUI();
     if (models.length) { renderModelList(); selectModel(Config.get('model'), true); }
     updateQuota();
-    renderFontButton();
+    genFonts.render();
+    editFonts.render();
     updateEditorBar();
     renderCompInfo();
-    updateEditTab();
+    updateTabs();
     if (fonts.length) $('fontCount').textContent = t('gen.fontCount', { n: fonts.length });
   }
 
@@ -241,7 +258,7 @@
     models = sortedModels(list && list.length ? list : [{ id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite Latest' }]);
     var current = Config.get('model');
     if (!current || !models.some(function (m) { return m.id === current; })) {
-      current = models[0].id; // el más barato y gratuito disponible
+      current = models[0].id;
       Config.set('model', current);
     }
     renderModelList();
@@ -302,10 +319,9 @@
   }
 
   // ================================================================ TIPOGRAFÍAS
-  // Desplegable propio con buscador: muestra TODAS las familias (cada una con su propia letra)
-  // y se filtra al escribir. El estilo (Bold, Regular…) se elige en el selector de al lado.
+  // Desplegable con buscador: todas las familias (cada una con su propia letra). Hay dos:
+  // uno en Generar (tipografía por defecto) y otro en Editar (la de la capa seleccionada).
   var fonts = [];          // [{ f: familia, s: [[estilo, postScriptName], ...] }]
-  var currentFamily = null;
 
   function findFontByPS(ps) {
     for (var i = 0; i < fonts.length; i++) {
@@ -314,133 +330,128 @@
     return null;
   }
 
-  function fillStyles(fam, selectPS) {
-    var sel = $('fontStyle');
-    sel.innerHTML = '';
-    fam.s.forEach(function (st) {
-      var o = document.createElement('option');
-      o.value = st[1]; o.textContent = st[0];
-      sel.appendChild(o);
-    });
-    if (selectPS && fam.s.some(function (st) { return st[1] === selectPS; })) sel.value = selectPS;
-    else {
-      // Para subtítulos se prefiere un estilo Bold; si no, Regular
-      var pick = fam.s.filter(function (st) { return /^bold$|^negrita$/i.test(st[0]); })[0] ||
-        fam.s.filter(function (st) { return /regular|normal|book/i.test(st[0]); })[0] || fam.s[0];
-      sel.value = pick[1];
+  function FontPicker(prefix, onPick) {
+    var ids = { btn: prefix + 'FontBtn', pop: prefix + 'FontPop', search: prefix + 'FontSearch', list: prefix + 'FontList', name: prefix + 'FontName', style: prefix + 'FontStyle' };
+    if (!prefix) ids = { btn: 'fontBtn', pop: 'fontPop', search: 'fontSearch', list: 'fontList', name: 'fontName', style: 'fontStyle' };
+    var self = { family: null };
+    var hl = -1, shown = [];
+
+    function fillStyles(fam, selectPS) {
+      var sel = $(ids.style);
+      sel.innerHTML = '';
+      fam.s.forEach(function (st) {
+        var o = document.createElement('option');
+        o.value = st[1]; o.textContent = st[0];
+        sel.appendChild(o);
+      });
+      if (selectPS && fam.s.some(function (st) { return st[1] === selectPS; })) sel.value = selectPS;
+      else {
+        var pick = fam.s.filter(function (st) { return /^bold$|^negrita$/i.test(st[0]); })[0] ||
+          fam.s.filter(function (st) { return /regular|normal|book/i.test(st[0]); })[0] || fam.s[0];
+        sel.value = pick[1];
+      }
     }
+
+    self.render = function () {
+      if (!fonts.length) return;
+      $(ids.name).textContent = self.family ? self.family.f : '—';
+      $(ids.name).style.fontFamily = self.family ? '"' + self.family.f + '", sans-serif' : '';
+    };
+
+    /** Muestra la fuente con ese nombre PostScript (sin aplicar nada). */
+    self.show = function (ps, fallback) {
+      var hit = (ps && findFontByPS(ps)) || (fallback && findFontByPS(fallback)) || findFontByPS('Arial-BoldMT') ||
+        (fonts[0] && { fam: fonts[0], style: fonts[0].s[0] });
+      if (!hit) return;
+      self.family = hit.fam;
+      fillStyles(hit.fam, hit.style[1]);
+      self.render();
+    };
+
+    self.value = function () { return $(ids.style).value; };
+    self.label = function () { return (self.family ? self.family.f : '') + ' ' + (($(ids.style).selectedOptions[0] || {}).textContent || ''); };
+
+    function renderList() {
+      var q = $(ids.search).value.trim().toLowerCase();
+      shown = q ? fonts.filter(function (f) { return f.f.toLowerCase().indexOf(q) >= 0; }) : fonts;
+      var box = $(ids.list);
+      box.innerHTML = '';
+      if (!shown.length) { box.innerHTML = '<div class="fsel-none">' + t('gen.fontNone') + '</div>'; return; }
+      var frag = document.createDocumentFragment();
+      shown.forEach(function (fam, i) {
+        var o = document.createElement('div');
+        o.className = 'fopt' + (fam === self.family ? ' sel' : '') + (i === hl ? ' hl' : '');
+        o.textContent = fam.f;
+        o.style.fontFamily = '"' + fam.f + '", sans-serif';
+        o.onmousedown = function (e) { e.preventDefault(); choose(fam); };
+        frag.appendChild(o);
+      });
+      box.appendChild(frag);
+    }
+
+    function open() {
+      if (!fonts.length) return;
+      var pop = $(ids.pop), r = $(ids.btn).getBoundingClientRect();
+      pop.classList.toggle('up', window.innerHeight - r.bottom < 220 && r.top > window.innerHeight - r.bottom);
+      pop.classList.remove('hidden');
+      $(ids.search).value = '';
+      hl = -1;
+      renderList();
+      var sel = $(ids.list).querySelector('.sel');
+      if (sel) $(ids.list).scrollTop = sel.offsetTop - 60;
+      setTimeout(function () { $(ids.search).focus(); }, 0);
+    }
+    self.close = function () { $(ids.pop).classList.add('hidden'); };
+
+    function choose(fam) {
+      self.close();
+      self.family = fam;
+      fillStyles(fam);
+      self.render();
+      onPick(self.value());
+    }
+
+    $(ids.btn).onclick = function (e) {
+      e.stopPropagation();
+      var willOpen = $(ids.pop).classList.contains('hidden');
+      genFonts.close(); editFonts.close();
+      if (willOpen) open();
+    };
+    $(ids.pop).onclick = function (e) { e.stopPropagation(); };
+    $(ids.search).oninput = function () { hl = 0; renderList(); $(ids.list).scrollTop = 0; };
+    $(ids.search).onkeydown = function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        hl = Math.max(0, Math.min(shown.length - 1, hl + (e.key === 'ArrowDown' ? 1 : -1)));
+        renderList();
+        var h = $(ids.list).querySelector('.hl');
+        if (h) h.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (shown[Math.max(0, hl)]) choose(shown[Math.max(0, hl)]);
+      } else if (e.key === 'Escape') self.close();
+    };
+    $(ids.style).addEventListener('change', function () { onPick(self.value()); });
+    return self;
   }
 
-  function renderFontButton() {
-    if (!fonts.length) return;
-    $('fontName').textContent = currentFamily ? currentFamily.f : '—';
-    $('fontName').style.fontFamily = currentFamily ? '"' + currentFamily.f + '", sans-serif' : '';
-  }
-
-  function showFont(ps) {
-    var hit = ps && findFontByPS(ps);
-    if (!hit) hit = findFontByPS('Arial-BoldMT') || (fonts[0] && { fam: fonts[0], style: fonts[0].s[0] });
-    if (!hit) return;
-    currentFamily = hit.fam;
-    fillStyles(hit.fam, hit.style[1]);
-    renderFontButton();
-  }
-
-  var fontHl = -1, fontShown = [];
-  function renderFontList() {
-    var q = $('fontSearch').value.trim().toLowerCase();
-    fontShown = q ? fonts.filter(function (f) { return f.f.toLowerCase().indexOf(q) >= 0; }) : fonts;
-    var box = $('fontList');
-    box.innerHTML = '';
-    if (!fontShown.length) { box.innerHTML = '<div class="fsel-none">' + t('gen.fontNone') + '</div>'; return; }
-    var frag = document.createDocumentFragment();
-    fontShown.forEach(function (fam, i) {
-      var o = document.createElement('div');
-      o.className = 'fopt' + (fam === currentFamily ? ' sel' : '') + (i === fontHl ? ' hl' : '');
-      o.textContent = fam.f;
-      o.style.fontFamily = '"' + fam.f + '", sans-serif';
-      o.title = fam.f + ' · ' + fam.s.length;
-      o.onmousedown = function (e) { e.preventDefault(); chooseFamily(fam); };
-      frag.appendChild(o);
-    });
-    box.appendChild(frag);
-  }
-
-  function openFontPop() {
-    if (!fonts.length) return;
-    var pop = $('fontPop');
-    var r = $('fontBtn').getBoundingClientRect();
-    pop.classList.toggle('up', window.innerHeight - r.bottom < 220 && r.top > window.innerHeight - r.bottom);
-    pop.classList.remove('hidden');
-    $('fontSearch').value = '';
-    fontHl = -1;
-    renderFontList();
-    var sel = $('fontList').querySelector('.sel');
-    if (sel) $('fontList').scrollTop = sel.offsetTop - 60;
-    setTimeout(function () { $('fontSearch').focus(); }, 0);
-  }
-
-  function closeFontPop() { $('fontPop').classList.add('hidden'); }
-
-  function chooseFamily(fam) {
-    closeFontPop();
-    currentFamily = fam;
-    fillStyles(fam);
-    renderFontButton();
-    applyFont();
-  }
+  var genFonts = null, editFonts = null;
 
   function loadFonts() {
     return CEP.call('getFonts').then(function (r) {
       if (!r.supported || !r.fonts.length) {
-        $('fontName').textContent = t('gen.fontNeeds');
+        $('fontName').textContent = t('gen.fontNeeds'); $('eFontName').textContent = t('gen.fontNeeds');
         $('fontBtn').disabled = true; $('fontStyle').disabled = true;
+        $('eFontBtn').disabled = true; $('eFontStyle').disabled = true;
         log(t('l.fontsNeed'), 'warn');
         return;
       }
       fonts = r.fonts.sort(function (a, b) { return a.f.localeCompare(b.f); });
       $('fontCount').textContent = t('gen.fontCount', { n: fonts.length });
       log(t('l.fontsLoaded', { n: fonts.length }));
-      showFont((compInfo && compInfo.subFont) || Config.getSettings().font || 'Arial-BoldMT');
+      genFonts.show(Config.getSettings().font, 'Arial-BoldMT');
+      if (editStyle) editFonts.show(editStyle.font);
     }).catch(function (e) { log(t('l.fontsFail', { msg: e.message }), 'warn'); });
-  }
-
-  /** Aplica la tipografía elegida: se guarda como predeterminada y se aplica a la capa existente. */
-  function applyFont() {
-    var ps = $('fontStyle').value;
-    if (!ps) return;
-    persistSettings();
-    log(t('l.fontSel', { name: (currentFamily ? currentFamily.f : '') + ' ' + ($('fontStyle').selectedOptions[0] || {}).textContent, ps: ps }));
-    applyStyleToLayer();
-  }
-
-  /** Lleva a la capa existente los cambios de estilo del panel (tipografía, trazo, sombra, fondo). */
-  function applyStyleToLayer() {
-    if (busy || !compInfo || !compInfo.subLayer) return;
-    if (compInfo.hasWords) reflow(); // recalcula el reparto con el nuevo estilo
-    else CEP.call('ensureLayer', layerOpts(readSettings())).catch(function (e) { log(t('l.error', { msg: e.message }), 'err'); });
-  }
-
-  function initFontPicker() {
-    $('fontBtn').onclick = function (e) {
-      e.stopPropagation();
-      if ($('fontPop').classList.contains('hidden')) openFontPop(); else closeFontPop();
-    };
-    $('fontPop').onclick = function (e) { e.stopPropagation(); };
-    $('fontSearch').oninput = function () { fontHl = 0; renderFontList(); $('fontList').scrollTop = 0; };
-    $('fontSearch').onkeydown = function (e) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        fontHl = Math.max(0, Math.min(fontShown.length - 1, fontHl + (e.key === 'ArrowDown' ? 1 : -1)));
-        renderFontList();
-        var hl = $('fontList').querySelector('.hl');
-        if (hl) hl.scrollIntoView({ block: 'nearest' });
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (fontShown[Math.max(0, fontHl)]) chooseFamily(fontShown[Math.max(0, fontHl)]);
-      } else if (e.key === 'Escape') closeFontPop();
-    };
-    $('fontStyle').addEventListener('change', applyFont);
   }
 
   // ================================================================ ASISTENTE DE API KEY
@@ -474,38 +485,68 @@
     $('wzKey').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('wzValidate').click(); });
   }
 
-  // ================================================================ COMPOSICIÓN
+  // ================================================================ COMPOSICIÓN Y CAPA DE TRABAJO
   function renderCompInfo() {
     var el = $('compInfo'), info = compInfo;
     if (!info) return;
     if (!info.comp) { el.innerHTML = '<span class="w">' + t('gen.openComp') + '</span>'; el.title = ''; return; }
     var c = info.comp;
     var wa = fmtTime(c.workAreaStart) + '–' + fmtTime(c.workAreaStart + c.workAreaDuration);
+    var nSubs = (info.subLayers || []).length;
     el.innerHTML = (c.hasAudio ? '' : '<span class="w">' + t('gen.noAudio') + '</span>') +
-      '<b>' + escapeHTML(c.name) + '</b> · ' + c.width + '×' + c.height + ' · ' + wa + (info.subLayer ? t('gen.hasSubs') : '');
+      '<b>' + escapeHTML(c.name) + '</b> · ' + c.width + '×' + c.height + ' · ' + wa + (nSubs ? t('gen.hasSubs') + (nSubs > 1 ? ' ×' + nSubs : '') : '');
     el.title = c.name + '\n' + c.width + '×' + c.height + ' · ' + c.frameRate.toFixed(2) + ' fps\n' + t('gen.workArea') + ': ' + wa +
-      (info.subLayer ? '\n' + t('gen.subLayer') + ': ' + info.subLayer : '') +
       (info.selected ? '\n' + t('gen.selLayer') + ': ' + info.selected.name : '');
   }
 
-  /** La pestaña Editar solo se puede usar cuando la composición ya tiene subtítulos. */
-  function updateEditTab() {
-    var ok = !!(compInfo && compInfo.subLayer && compInfo.markerCount > 0);
-    $('tabEdit').disabled = !ok;
-    $('tabEdit').title = ok ? '' : t('tab.edit.locked');
-    if (!ok && $('tab-edit').classList.contains('active')) showTab('gen');
+  function hasAnySubs() {
+    return !!(compInfo && compInfo.subLayers && compInfo.subLayers.some(function (l) { return l.markers > 0; }));
   }
 
+  /** Muestra en Editar/Exportar sobre qué capa se trabaja, o pide elegir una si hay varias. */
+  function renderTarget(id, action) {
+    var el = $(id);
+    if (!compInfo || !compInfo.comp) { el.className = 'target'; el.textContent = ''; return false; }
+    if (compInfo.subIndex) {
+      el.className = 'target';
+      el.innerHTML = t('target.layer', { name: escapeHTML(compInfo.subLayer) });
+      return true;
+    }
+    el.className = 'target warn';
+    el.textContent = t('target.pick', { n: (compInfo.subLayers || []).length, action: t(action) });
+    return false;
+  }
+
+  /** Editar y Exportar solo se pueden usar cuando ya hay subtítulos generados. */
+  function updateTabs() {
+    var ok = hasAnySubs();
+    ['tabEdit', 'tabExport'].forEach(function (id) {
+      $(id).disabled = !ok;
+      $(id).title = ok ? '' : t('tab.edit.locked');
+    });
+    if (!ok && ($('tab-edit').classList.contains('active') || $('tab-export').classList.contains('active'))) showTab('gen');
+    var editOk = renderTarget('editTarget', 'target.edit');
+    $('editBody').classList.toggle('off', !editOk);
+    var expOk = renderTarget('exportTarget', 'target.export');
+    if (!busy) $('btnExport').disabled = !expOk;
+  }
+
+  var lastTarget = null;
   function refreshComp() {
     if (busy || !CEP.available) return Promise.resolve();
     return CEP.call('compInfo').then(function (info) {
       compInfo = info;
       renderCompInfo();
-      if (info.comp) {
-        $('btnReflow').disabled = !info.hasWords;
+      updateTabs();
+      // Si cambia la capa de trabajo (otra selección), se recarga Editar
+      var key = info.subIndex ? info.subIndex + '|' + info.subLayer : null;
+      if (key !== lastTarget) {
+        lastTarget = key;
+        editorSubs = []; editorSig = null; editStyle = null;
+        if ($('tab-edit').classList.contains('active') && key) { loadEditStyle(); loadSubs(); }
+      } else if (info.comp) {
         checkEditorSync();
       }
-      updateEditTab();
     }).catch(function () { /* AE ocupado: se reintenta luego */ });
   }
 
@@ -520,7 +561,6 @@
         return { path: r.path, temp: true, duration: r.duration, toComp: function (x) { return x + r.offset; }, range: [r.offset, r.offset + r.duration] };
       });
     }
-    // Último recurso: el archivo original de la capa (puede ser un vídeo, que gasta muchos más tokens)
     function fromLayerFile() {
       return CEP.call('layerSource').then(function (r) {
         log(t('l.useFile', { path: r.path }), 'warn');
@@ -532,7 +572,6 @@
         };
       });
     }
-    // Solo el audio de la capa seleccionada (nunca se envía vídeo)
     function fromLayer() {
       if (!compInfo || !compInfo.selected) return Promise.reject(new Error(t('e.selectLayer')));
       job(t('job.exportLayer'), 0.03);
@@ -563,8 +602,8 @@
     return m;
   }
 
-  /** Mide palabras, segmenta y escribe los subtítulos en la capa. */
-  function layoutAndApply(words, settings, storeWords, p0) {
+  /** Mide palabras, segmenta y escribe los subtítulos en la capa indicada (índice). */
+  function layoutAndApply(words, settings, storeWords, p0, layerIdx) {
     var unique = {};
     words.forEach(function (w) { unique[w.w] = 1; });
     var list = Object.keys(unique);
@@ -577,11 +616,10 @@
     function verify(segs, pass) {
       var multi = segs.filter(function (s) { return s.lines >= settings.maxLines; });
       if (!multi.length || pass >= 3) return Promise.resolve(segs);
-      return CEP.call('countLines', { texts: multi.map(function (s) { return s.text; }) }).then(function (counts) {
+      return CEP.call('countLines', { layer: layerIdx, texts: multi.map(function (s) { return s.text; }) }).then(function (counts) {
         var over = multi.filter(function (s, i) { return counts[i] > settings.maxLines && s.w1 > s.w0; });
         if (!over.length) return segs;
         if (pass < 2) {
-          // La tipografía real ocupa algo más que lo medido: se recalcula todo con más margen
           segOpts.boxWidth *= 0.95;
           log(t('l.boxRetry', { n: over.length, lines: settings.maxLines }));
         } else {
@@ -593,7 +631,7 @@
       });
     }
 
-    return CEP.call('measure', { words: list }).then(function (m) {
+    return CEP.call('measure', { layer: layerIdx, words: list }).then(function (m) {
       segOpts = {
         boxWidth: settings.boxWidth, maxLines: settings.maxLines,
         spaceWidth: m.space, avgCharWidth: m.avgChar, widths: m.widths,
@@ -606,21 +644,14 @@
     }).then(function (segs) {
       job(t('job.create', { n: segs.length }), p0 + (1 - p0) * 0.6);
       log(t('l.creating', { n: segs.length, w: settings.boxWidth, lines: settings.maxLines, silence: t(settings.keepSilence ? 'l.silKeep' : 'l.silHide') }));
-      var payload = { segments: segs, settings: settings };
+      var payload = { layer: layerIdx, segments: segs, settings: settings };
       if (storeWords) payload.words = words.map(function (w) { return w.p != null ? [w.w, w.s, w.e, w.p] : [w.w, w.s, w.e]; });
       return CEP.call('apply', payload);
     });
   }
 
-  function layerOpts(settings) {
-    return {
-      fontSize: settings.fontSize, background: settings.background, stroke: settings.stroke, shadow: settings.shadow,
-      boxWidth: settings.boxWidth, maxLines: settings.maxLines, font: settings.font, bottomPad: settings.bottomPad
-    };
-  }
-
-  /** mode: 'literal' (transcripción exacta) o 'interpret' (la IA entiende el contexto y limpia el texto). */
-  function generate(mode) {
+  /** Genera una capa de subtítulos NUEVA con los ajustes de la pestaña Generar. */
+  function generate() {
     if (busy) return;
     if (!Config.hasKey()) { showWizard(1); return; }
     var apiKey = Config.get('apiKey');
@@ -629,7 +660,9 @@
     if (q.exhausted && !confirm(t('q.confirmExhausted'))) return;
 
     var settings = readSettings();
+    var mode = settings.interpret ? 'interpret' : 'literal';
     persistSettings();
+    jobBoxId = 'job';
     setBusy(true);
     logRun(t(mode === 'interpret' ? 'l.run.interp' : 'l.run.gen', { model: model }));
     var audio = null, prep = null, temps = [];
@@ -684,7 +717,6 @@
       log(t('l.response', { phrases: res.phrases, words: res.words.length, tokens: num(tokens), 'in': num(res.usage.promptTokenCount), out: num(res.usage.candidatesTokenCount) }), 'ok');
       if (res.truncated) log(t('l.truncated'), 'warn');
 
-      // Volver a la línea de tiempo original (si se quitaron silencios)
       var aiWords = res.words;
       if (prep && prep.trimmed) {
         aiWords = aiWords.map(function (w) {
@@ -692,8 +724,6 @@
           return { w: w.w, s: s, e: Math.max(e, s + 0.05), p: w.p };
         });
       }
-
-      // Ajuste fino con los tramos de voz reales
       if (settings.vad && prep && aiWords.length) {
         job(t('job.align'), 0.87);
         if (prep.regions.length) {
@@ -712,13 +742,17 @@
       }).filter(function (w) { return w.e >= audio.range[0] - 0.05 && w.s <= audio.range[1] + 0.05; });
       if (!words.length) throw new Error(t('e.noSpeech'));
       if (res.language) log(t('l.detected', { lang: res.language }));
-      return CEP.call('ensureLayer', layerOpts(settings)).then(function () {
-        return layoutAndApply(words, settings, true, 0.9);
+      // Siempre una capa NUEVA: así se pueden generar varios subtítulos en la misma composición
+      return CEP.call('ensureLayer', {
+        create: true, fontSize: settings.fontSize, background: settings.background, stroke: settings.stroke, shadow: settings.shadow,
+        boxWidth: settings.boxWidth, maxLines: settings.maxLines, font: settings.font, bottomPad: settings.bottomPad
+      }).then(function (layer) {
+        log(t('l.newLayer', { name: layer.name }));
+        return layoutAndApply(words, settings, true, 0.9, layer.index);
       });
     }).then(function (r) {
       job(t('job.done', { n: r.count }), 1, 'ok');
       log(t('l.done', { n: r.count }), 'ok');
-      editorSubs = []; editorSig = null;
     }).catch(function (e) {
       stopFake();
       cleanup();
@@ -731,34 +765,89 @@
     });
   }
 
-  function reflow() {
-    if (busy) return;
-    var settings = readSettings();
-    persistSettings();
+  // ================================================================ EDITAR: ESTILO DE LA CAPA
+  var editStyle = null;   // estilo leído de la capa de trabajo
+
+  function targetIdx() { return compInfo && compInfo.subIndex; }
+
+  function loadEditStyle() {
+    if (!targetIdx()) return Promise.resolve();
+    return CEP.call('layerStyle', { layer: targetIdx() }).then(function (s) {
+      editStyle = s;
+      $('eFontSize').value = s.fontSize;
+      $('eBoxWidth').value = s.boxWidth;
+      setSeg('eMaxLines', s.maxLines);
+      $('eStroke').checked = s.stroke;
+      $('eShadow').checked = s.shadow;
+      $('eBg').checked = s.background;
+      $('btnReflow').disabled = busy || !s.hasWords;
+      if (fonts.length) editFonts.show(s.font);
+    }).catch(function (e) { log(t('l.error', { msg: e.message }), 'err'); });
+  }
+
+  function editValues() {
+    return {
+      layer: targetIdx(),
+      font: editFonts.value() || (editStyle && editStyle.font),
+      fontSizeSet: Number($('eFontSize').value) || 0,
+      boxWidth: Number($('eBoxWidth').value) || (editStyle && editStyle.boxWidth) || 1000,
+      maxLines: getSeg('eMaxLines'),
+      stroke: $('eStroke').checked,
+      shadow: $('eShadow').checked,
+      background: $('eBg').checked
+    };
+  }
+
+  /** Aplica a la capa seleccionada el trazo, la sombra y la caja de fondo (sin reorganizar). */
+  function applyEditToggles() {
+    if (busy || !targetIdx()) return;
+    var v = editValues();
+    CEP.call('ensureLayer', { layer: v.layer, stroke: v.stroke, shadow: v.shadow, background: v.background, boxWidth: v.boxWidth, maxLines: v.maxLines })
+      .then(function (r) { log(t('l.styleApplied', { name: r.name })); })
+      .catch(function (e) { log(t('l.error', { msg: e.message }), 'err'); });
+  }
+
+  /** Aplica tipografía/tamaño/caja a la capa seleccionada y vuelve a repartir sus subtítulos. */
+  function reflowTarget() {
+    if (busy || !targetIdx()) return;
+    var v = editValues();
+    jobBoxId = 'jobEdit';
     setBusy(true);
-    logRun(t('l.run.reflow'));
+    logRun(t('l.run.reflow') + ' · ' + (compInfo.subLayer || ''));
     job(t('job.readWords'), 0.1);
-    CEP.call('getStore').then(function (store) {
-      if (!store.words || !store.words.length) throw new Error(t('e.noWords'));
-      var words = store.words.map(function (a) { return { w: a[0], s: a[1], e: a[2], p: a[3] }; });
-      return CEP.call('ensureLayer', layerOpts(settings)).then(function () {
-        return layoutAndApply(words, settings, false, 0.3);
+    CEP.call('getStore', { layer: v.layer }).then(function (store) {
+      return CEP.call('ensureLayer', v).then(function () {
+        if (!store.words || !store.words.length) return null; // sin palabras guardadas: solo estilo
+        var words = store.words.map(function (a) { return { w: a[0], s: a[1], e: a[2], p: a[3] }; });
+        // Ajustes de tiempos con los que se generó la capa + los valores de la caja editados
+        var gen = readSettings(), s = store.settings || {};
+        var settings = {
+          boxWidth: v.boxWidth, maxLines: v.maxLines,
+          gapBreak: s.gapBreak || gen.gapBreak, maxDuration: s.maxDuration || gen.maxDuration,
+          breakPunct: 'breakPunct' in s ? s.breakPunct : gen.breakPunct,
+          keepSilence: 'keepSilence' in s ? s.keepSilence : gen.keepSilence
+        };
+        for (var k in s) if (!(k in settings)) settings[k] = s[k];
+        return layoutAndApply(words, settings, false, 0.3, v.layer);
       });
     }).then(function (r) {
-      job(t('job.reflowed', { n: r.count }), 1, 'ok');
-      log(t('l.reflowed', { n: r.count }), 'ok');
+      if (r) { job(t('job.reflowed', { n: r.count }), 1, 'ok'); log(t('l.reflowed', { n: r.count }), 'ok'); }
+      else job('✔', 1, 'ok');
       editorSubs = []; editorSig = null;
     }).catch(function (e) {
       log(t('l.error', { msg: e.message }), 'err');
       job('✖ ' + e.message, 1, 'err');
-    }).then(function () { setBusy(false); refreshComp(); });
+    }).then(function () {
+      setBusy(false);
+      refreshComp().then(function () { loadEditStyle(); loadSubs(); });
+    });
   }
 
-  // ================================================================ EDITOR
+  // ================================================================ EDITAR: SUBTÍTULOS
   // Cada fila recuerda su estado original. Al guardar solo se envían los CAMBIOS hechos aquí;
   // así no se pisan los ajustes hechos a mano en la línea de tiempo (mover o alargar marcadores).
   var editorSubs = [];
-  var editorSig = null;      // huella de los marcadores cuando se cargó el editor
+  var editorSig = null;
 
   function editorDirty() {
     return editorSubs.some(function (s) { return s.isNew || s.del || s.dText || s.dStart || s.dEnd; });
@@ -799,7 +888,6 @@
     });
   }
 
-  /** Crea un subtítulo nuevo en el tiempo x (sin pisar al siguiente). */
   function insertSub(x, after) {
     var sorted = editorSubs.filter(function (s) { return !s.del; }).sort(function (a, b) { return a.start - b.start; });
     var next = sorted.filter(function (s) { return s !== after && s.start > x + 0.001; })[0];
@@ -825,7 +913,8 @@
   }
 
   function loadSubs() {
-    CEP.call('readSubs').then(function (r) {
+    if (!targetIdx()) { editorSubs = []; renderEditor(); return; }
+    CEP.call('readSubs', { layer: targetIdx() }).then(function (r) {
       editorSubs = r.subs.map(function (s) {
         return { start: s.start, end: s.end, text: s.text, orig: { start: s.start, end: s.end, text: s.text } };
       });
@@ -835,7 +924,6 @@
     }).catch(function (e) { $('subList').innerHTML = '<p class="status err">' + escapeHTML(e.message) + '</p>'; });
   }
 
-  /** Si los marcadores cambiaron fuera del panel (Ctrl+Z, edición a mano…), recarga o avisa. */
   function checkEditorSync() {
     if (!compInfo || editorSig === null || compInfo.markerSig === editorSig) return;
     if (!editorDirty()) { loadSubs(); return; }
@@ -843,7 +931,7 @@
   }
 
   function saveSubs() {
-    if (busy) return;
+    if (busy || !targetIdx()) return;
     var changes = [], inserts = [];
     editorSubs.forEach(function (s) {
       var emptied = !String(s.text).trim();
@@ -858,26 +946,27 @@
     });
     if (!changes.length && !inserts.length) { log(t('l.editNone')); return; }
     setBusy(true);
-    CEP.call('patchSubs', { changes: changes, inserts: inserts }).then(function (r) {
+    CEP.call('patchSubs', { layer: targetIdx(), changes: changes, inserts: inserts }).then(function (r) {
       log(t('l.editSaved', { c: changes.length, i: inserts.length, n: r.count }), 'ok');
       if (r.missing) log(t('l.editMissing', { n: r.missing }), 'warn');
+      setBusy(false);
       return refreshComp();
     }).then(function () { loadSubs(); })
-      .catch(function (e) { log(t('l.editErr', { msg: e.message }), 'err'); alert(e.message); })
-      .then(function () { setBusy(false); });
+      .catch(function (e) { setBusy(false); log(t('l.editErr', { msg: e.message }), 'err'); alert(e.message); });
   }
 
   // ================================================================ EXPORTAR
   function exportSubs() {
+    if (!targetIdx()) return;
     var s = readSettings();
     persistSettings();
     var st = $('exportStatus');
     var fmt = Exporters.formats[s.exportFormat];
     setStatus(st, t('exp.reading'), 'busy');
-    Promise.all([CEP.call('readSubs'), CEP.call('getStore').catch(function () { return { words: [] }; })]).then(function (res) {
+    var L = { layer: targetIdx() };
+    Promise.all([CEP.call('readSubs', L), CEP.call('getStore', L).catch(function () { return { words: [] }; })]).then(function (res) {
       var r = res[0], store = res[1];
       if (!r.subs.length) throw new Error(t('exp.none'));
-      // r.offset = control "Desfase" de la capa; se resta el origen elegido
       var offset = (s.exportOrigin === 'workarea' ? r.workAreaStart : 0) - (r.offset || 0);
       var words = (store.words || []).map(function (a) { return { w: a[0], s: a[1], e: a[2] }; });
       var subs = r.subs.map(function (x) {
@@ -891,7 +980,8 @@
       }).filter(function (x) { return x.end > 0; });
 
       var content = fmt.fn(subs, { oneLine: s.exportOneLine });
-      var defName = (r.compName || 'subtitles').replace(/[\\/:*?"<>|]/g, '_') + '.' + fmt.ext;
+      var base = (r.compName || 'subtitles') + ((compInfo.subLayers || []).length > 1 ? ' - ' + compInfo.subLayer : '');
+      var defName = base.replace(/[\\/:*?"<>|]/g, '_') + '.' + fmt.ext;
       var file = CEP.saveDialog(t('exp.dialog'), defName, [fmt.ext]);
       if (!file && !(window.cep && window.cep.fs)) file = path.join(os.homedir(), 'Desktop', defName);
       if (!file) { setStatus(st, t('exp.cancel'), ''); return; }
@@ -907,16 +997,15 @@
 
   // ================================================================ INICIO
   function showTab(name) {
-    if (name === 'edit' && $('tabEdit').disabled) return;
+    if ((name === 'edit' && $('tabEdit').disabled) || (name === 'export' && $('tabExport').disabled)) return;
     document.querySelectorAll('.tab').forEach(function (x) { x.classList.toggle('active', x.getAttribute('data-tab') === name); });
     document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
-    if (name === 'edit' && !editorSubs.length) loadSubs();
+    if (name === 'edit') { if (!editStyle) loadEditStyle(); if (!editorSubs.length) loadSubs(); }
     if (name === 'log') { $('logDot').className = 'dot hidden'; $('logList').scrollTop = $('logList').scrollHeight; }
     if (name === 'settings') updateQuota();
   }
 
   function init() {
-    // Idioma antes de pintar nada
     var saved = Config.getSettings();
     I18N.setLang(saved.uiLang || 'auto');
     I18N.apply(document);
@@ -925,7 +1014,15 @@
       tb.onclick = function () { showTab(tb.getAttribute('data-tab')); };
     });
     initWizard();
-    initFontPicker();
+
+    // Tipografía de Generar: solo es el valor por defecto de la próxima generación
+    genFonts = FontPicker('', function (ps) {
+      persistSettings();
+      log(t('l.fontSel', { name: genFonts.label(), ps: ps }));
+    });
+    // Tipografía de Editar: se aplica a la capa seleccionada
+    editFonts = FontPicker('e', function () { reflowTarget(); });
+
     writeSettings(saved);
     if (saved.bottomPad == null) $('bottomPad').value = '';
     fillModels(Config.get('models'));
@@ -935,29 +1032,24 @@
     log(t('l.lang', { lang: I18N.lang === 'en' ? 'English' : 'Español' }));
 
     // Generar
-    $('btnGenerate').onclick = function () { generate('literal'); };
-    $('btnInterpret').onclick = function () { generate('interpret'); };
-    $('btnReflow').onclick = reflow;
+    $('btnGenerate').onclick = generate;
     $('boxWidth80').onclick = function () {
       if (compInfo && compInfo.comp) { $('boxWidth').value = Math.round(compInfo.comp.width * 0.8); persistSettings(); }
     };
     Array.prototype.forEach.call(document.querySelectorAll('#maxLines button'), function (b) {
-      b.onclick = function (e) {
-        e.preventDefault();
-        document.querySelectorAll('#maxLines button').forEach(function (x) { x.classList.toggle('on', x === b); });
-        persistSettings();
-      };
+      b.onclick = function (e) { e.preventDefault(); setSeg('maxLines', b.getAttribute('data-v')); persistSettings(); };
     });
-    Array.prototype.forEach.call(document.querySelectorAll('input, select'), function (el) {
-      if (el.closest('#wizard') || el.closest('#tab-settings') || el.closest('#fontRow') || el.id === 'subSearch') return;
+    Array.prototype.forEach.call(document.querySelectorAll('#tab-gen input, #tab-gen select, #tab-export input, #tab-export select'), function (el) {
+      if (el.closest('#fontRow')) return;
       el.addEventListener('change', persistSettings);
     });
-    // Trazo, sombra y caja de fondo se aplican al momento a la capa existente
-    ['stroke', 'shadow', 'bgBox'].forEach(function (id) {
-      $(id).addEventListener('change', function () {
-        if (busy || !compInfo || !compInfo.subLayer) return;
-        CEP.call('ensureLayer', layerOpts(readSettings())).catch(function (e) { log(t('l.error', { msg: e.message }), 'err'); });
-      });
+
+    // Editar: estilo de la capa seleccionada
+    $('btnReflow').onclick = reflowTarget;
+    ['eStroke', 'eShadow', 'eBg'].forEach(function (id) { $(id).addEventListener('change', applyEditToggles); });
+    ['eFontSize', 'eBoxWidth'].forEach(function (id) { $(id).addEventListener('change', reflowTarget); });
+    Array.prototype.forEach.call(document.querySelectorAll('#eMaxLines button'), function (b) {
+      b.onclick = function (e) { e.preventDefault(); setSeg('eMaxLines', b.getAttribute('data-v')); reflowTarget(); };
     });
 
     // Selector de modelo
@@ -972,10 +1064,10 @@
       list.style.maxHeight = Math.max(120, Math.min(300, down ? below : above)) + 'px';
       list.classList.remove('hidden');
     };
-    document.addEventListener('click', function () { $('modelList').classList.add('hidden'); closeFontPop(); });
+    document.addEventListener('click', function () { $('modelList').classList.add('hidden'); genFonts.close(); editFonts.close(); });
     $('quota').onclick = function () { showTab('settings'); };
 
-    // Editar
+    // Editar: lista
     $('btnLoadSubs').onclick = loadSubs;
     $('btnAddSub').onclick = insertAtCursor;
     $('subChanged').addEventListener('click', function (e) { if (e.target && e.target.id === 'subReload') loadSubs(); });
@@ -1019,7 +1111,6 @@
     CEP.ensureHost().then(function () {
       return refreshComp();
     }).then(function () {
-      // Valores por defecto según la composición la primera vez
       var s0 = Config.getSettings();
       if (compInfo && compInfo.comp) {
         if (!s0.boxWidth) $('boxWidth').value = Math.round(compInfo.comp.width * 0.8);

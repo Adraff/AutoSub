@@ -21,13 +21,18 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("AutoSub Installer")]
 [assembly: AssemblyProduct("AutoSub")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace AutoSubInstaller
 {
     static class L
     {
+        /// <summary>Version de AutoSub (la del propio instalador), p. ej. "1.6.0".</summary>
+        public static string Version
+        {
+            get { Version v = Assembly.GetExecutingAssembly().GetName().Version; return v.Major + "." + v.Minor + "." + v.Build; }
+        }
         static readonly bool Es = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "es";
         public static string T(string es, string en) { return Es ? es : en; }
     }
@@ -170,7 +175,7 @@ namespace AutoSubInstaller
 
         public MainForm()
         {
-            Text = L.T("Instalar AutoSub para After Effects", "Install AutoSub for After Effects");
+            Text = L.T("Instalar AutoSub ", "Install AutoSub ") + L.Version + L.T(" para After Effects", " for After Effects");
             ClientSize = new Size(560, 430);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -192,7 +197,15 @@ namespace AutoSubInstaller
                     new Rectangle(0, 0, 56, 56), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             };
             Controls.Add(logo);
-            Controls.Add(new Label { Text = "AutoSub", Font = new Font("Segoe UI", 18f, FontStyle.Bold), Location = new Point(98, 24), AutoSize = true, ForeColor = Color.White });
+            var title = new Label { Text = "AutoSub", Font = new Font("Segoe UI", 18f, FontStyle.Bold), Location = new Point(98, 24), AutoSize = true, ForeColor = Color.White };
+            Controls.Add(title);
+            // Versión visible junto al nombre
+            Controls.Add(new Label
+            {
+                Text = "v" + L.Version, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), AutoSize = true,
+                ForeColor = Color.White, BackColor = Accent, Padding = new Padding(6, 2, 6, 2),
+                Location = new Point(98 + TextRenderer.MeasureText("AutoSub", title.Font).Width + 4, 33)
+            });
             Controls.Add(new Label
             {
                 Text = L.T("Subtítulos automáticos con IA (Google Gemini) para After Effects", "AI-powered automatic subtitles (Google Gemini) for After Effects"),

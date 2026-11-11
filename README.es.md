@@ -13,7 +13,8 @@
 ## ✨ Qué hace
 
 - **Interfaz en español e inglés:** sigue automáticamente el idioma de After Effects, o elígelo en Ajustes.
-- **Generación interpretativa:** además de la transcripción literal, un segundo botón hace que la IA entienda el contexto y escriba subtítulos limpios: sin muletillas ("eeeh", "yyyy"), titubeos, repeticiones ni palabras mal pronunciadas.
+- **Modo interpretativo:** un interruptor junto al botón Generar hace que la IA entienda el contexto y escriba subtítulos limpios: sin muletillas ("eeeh", "yyyy"), titubeos, repeticiones ni palabras mal pronunciadas. Apagado por defecto (transcripción literal).
+- **Varias capas de subtítulos por composición:** cada generación crea una capa nueva e independiente, con su propio estilo y su propia caja de fondo.
 - **Cortes como los haría una persona:** la IA separa el habla en frases con sentido y AutoSub decide dónde cortar como un subtitulador: en comas y pausas, sin dejar palabras sueltas ni terminar en "de", "la", "y"…
 - **Transcripción automática** del audio de la composición (o del archivo de una capa), con tiempos por palabra.
 - **Ajuste fino de la sincronización:** analiza el audio real para colocar cada frase en el momento exacto en que se oye y respetar los silencios.
@@ -26,7 +27,7 @@
 - **Silencios:** puedes elegir si el subtítulo sigue en pantalla mientras nadie habla o desaparece.
 - **Desfase global:** con un control adelantas o retrasas todos los subtítulos.
 - **Efectos:** caja de fondo opcional que se ajusta al texto, fundido y efecto "pop".
-- **Editor integrado:** corrige el texto y los tiempos de cada subtítulo, crea uno nuevo en el cursor o después de otro, y elimina los que sobren. Al guardar solo se aplican tus cambios, así que los ajustes hechos a mano en la línea de tiempo se respetan, y todo se puede deshacer con Ctrl+Z (el editor se actualiza solo).
+- **Editor integrado:** arriba, el estilo de la capa de subtítulos seleccionada (tipografía, tamaño, ancho de caja, líneas, trazo, sombra y fondo); debajo, sus subtítulos. Corrige el texto y los tiempos de cada subtítulo, crea uno nuevo en el cursor o después de otro, y elimina los que sobren. Al guardar solo se aplican tus cambios, así que los ajustes hechos a mano en la línea de tiempo se respetan, y todo se puede deshacer con Ctrl+Z (el editor se actualiza solo).
 - **Exportación** a **SRT**, **WebVTT**, **TXT** o **JSON** (con tiempos por palabra).
 - **Selector de modelos:** los gratuitos aparecen en verde y el más eficiente va marcado con ★. Los de pago o los que gastan tokens de más aparecen en gris.
 - **Barra de cuota:** muestra cuántas peticiones gratuitas te quedan hoy y cuánto falta para que se recarguen.
@@ -66,9 +67,9 @@ No hace falta tarjeta de crédito. El nivel gratuito tiene un límite de peticio
 
 1. Abre tu composición y ajusta el **área de trabajo** al tramo que quieras subtitular.
 2. En la pestaña **Generar**, elige idioma, ancho de caja, número de líneas y demás opciones.
-3. Elige un modelo verde (se recomienda el ★) y pulsa **✦ Generar** (literal) o **✧ Interpretativa** (subtítulos limpios que entienden el contexto).
-4. Para cambiar el estilo, selecciona la capa `AutoSub - Subtitulos` y usa el panel **Carácter**. Después pulsa **↻** para recalcular los saltos de línea.
-5. Exporta desde la pestaña **Exportar**.
+3. Elige un modelo verde (se recomienda el ★), activa **Interpretativo** si quieres subtítulos limpios que entiendan el contexto, y pulsa **✦ Generar**. Cada generación crea una capa nueva.
+4. Para editar una capa, selecciónala en la línea de tiempo y abre la pestaña **Editar** (se habilita cuando ya hay subtítulos): arriba está su estilo y debajo sus subtítulos. También puedes usar el panel **Carácter** y después pulsar **↻ Reorganizar**.
+5. Exporta la capa seleccionada desde la pestaña **Exportar**.
 
 ### Controles de la capa (panel Controles de efectos)
 | Control | Para qué sirve |

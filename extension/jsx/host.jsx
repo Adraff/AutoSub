@@ -94,18 +94,63 @@ var AutoSub = (function () {
     return layer instanceof TextLayer && String(layer.comment || '').indexOf(TAG) === 0;
   }
 
-  function findSubLayer(comp) {
-    var sel = comp.selectedLayers, i;
-    for (i = 0; i < sel.length; i++) if (isAutoSubLayer(sel[i])) return sel[i];
-    for (i = 1; i <= comp.numLayers; i++) if (isAutoSubLayer(comp.layer(i))) return comp.layer(i);
+  function listSubLayers(comp) {
+    var out = [];
+    for (var i = 1; i <= comp.numLayers; i++) if (isAutoSubLayer(comp.layer(i))) out.push(comp.layer(i));
+    return out;
+  }
+
+  /** Capa de fondo vinculada (por id) a una capa de subtitulos. */
+  function bgOf(comp, layer) {
+    var st = readStore(layer), id = st && st.id;
+    for (var i = 1; i <= comp.numLayers; i++) {
+      var l = comp.layer(i), c = String(l.comment || '');
+      if (id && c === 'AUTOSUBBG:' + id) return l;
+    }
     return null;
   }
 
-  function requireSubLayer(comp) {
-    var l = findSubLayer(comp);
-    if (!l) throw new Error(M('No hay ninguna capa de AutoSub en esta composici\u00f3n. Genera los subt\u00edtulos primero.', 'There is no AutoSub layer in this composition. Generate the subtitles first.'));
+  /**
+   * Capa de subtitulos con la que se trabaja:
+   *  1) la indicada por el panel (a.layer = indice), si es de AutoSub;
+   *  2) la capa de AutoSub seleccionada en la linea de tiempo (o la de su fondo);
+   *  3) si en la composicion solo hay una, esa.
+   * Si hay varias y ninguna seleccionada, devuelve null (hay que elegir una).
+   */
+  function findSubLayer(comp, a) {
+    var i, l;
+    if (a && a.layer) {
+      try { l = comp.layer(Number(a.layer)); } catch (e) { l = null; }
+      if (l && isAutoSubLayer(l)) return l;
+    }
+    var subs = listSubLayers(comp), sel = comp.selectedLayers;
+    for (i = 0; i < sel.length; i++) if (isAutoSubLayer(sel[i])) return sel[i];
+    for (i = 0; i < sel.length; i++) {
+      for (var j = 0; j < subs.length; j++) if (bgOf(comp, subs[j]) === sel[i]) return subs[j];
+    }
+    return subs.length === 1 ? subs[0] : null;
+  }
+
+  function requireSubLayer(comp, a) {
+    var l = findSubLayer(comp, a);
+    if (!l) {
+      if (listSubLayers(comp).length > 1) throw new Error(M('Hay varias capas de subt\u00edtulos: selecciona en la l\u00ednea de tiempo la que quieres usar.', 'There are several subtitle layers: select the one you want on the timeline.'));
+      throw new Error(M('No hay ninguna capa de AutoSub en esta composici\u00f3n. Genera los subt\u00edtulos primero.', 'There is no AutoSub layer in this composition. Generate the subtitles first.'));
+    }
     return l;
   }
+
+  function uniqueName(comp, base) {
+    var name = base, n = 2, taken;
+    do {
+      taken = false;
+      for (var i = 1; i <= comp.numLayers; i++) if (comp.layer(i).name === name) { taken = true; break; }
+      if (taken) name = base + ' ' + (n++);
+    } while (taken);
+    return name;
+  }
+
+  function newId() { return 'S' + new Date().getTime().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
 
   function readStore(layer) {
     var c = String(layer.comment || '');
@@ -209,6 +254,7 @@ var AutoSub = (function () {
     var prop = textDocProp(layer);
     var td = prop.value;
     if (opts.font) { try { td.font = opts.font; } catch (e0) {} }
+    if (opts.fontSizeSet > 0) td.fontSize = Number(opts.fontSizeSet);
     var sc = scaleX(layer);
     var maxLines = Math.max(1, Number(opts.maxLines) || 2);
     var w = Math.max(20, (Number(opts.boxWidth) || 1000) / sc);
@@ -233,7 +279,7 @@ var AutoSub = (function () {
   function createSubLayer(comp, opts) {
     var size = Number(opts.fontSize) || Math.round(comp.height * 0.065);
     var layer = comp.layers.addBoxText([Number(opts.boxWidth) || comp.width * 0.8, size * 3], 'Subt\u00edtulo');
-    layer.name = nm(NAMES.layer);
+    layer.name = uniqueName(comp, nm(NAMES.layer));
     layer.startTime = 0;
     layer.inPoint = 0;
     layer.outPoint = comp.duration;
@@ -260,7 +306,7 @@ var AutoSub = (function () {
       ? Number(opts.bottomPad) : Math.round(comp.height * 0.08);
     layer.property('ADBE Transform Group').property('ADBE Position')
       .setValue([comp.width / 2, comp.height - pad - boxH / 2]);
-    writeStore(layer, { v: 1, words: [], settings: {} });
+    writeStore(layer, { v: 1, id: newId(), words: [], settings: {} });
     return layer;
   }
 
@@ -326,7 +372,14 @@ var AutoSub = (function () {
   }
 
   function ensureBackground(comp, layer, enabled) {
-    var existing = findLayerByName(comp, NAMES.bg[0]) || findLayerByName(comp, NAMES.bg[1]);
+    var st = readStore(layer) || { v: 1, words: [], settings: {} };
+    if (!st.id) { st.id = newId(); writeStore(layer, st); }
+    var existing = bgOf(comp, layer);
+    if (!existing) {
+      // Fondo de versiones anteriores (sin vinculo): se adopta si nadie lo usa
+      var legacy = findLayerByName(comp, NAMES.bg[0]) || findLayerByName(comp, NAMES.bg[1]);
+      if (legacy && String(legacy.comment || '').indexOf('AUTOSUBBG:') !== 0) { legacy.comment = 'AUTOSUBBG:' + st.id; existing = legacy; }
+    }
     if (!enabled) {
       if (existing) existing.enabled = false;
       return;
@@ -340,7 +393,8 @@ var AutoSub = (function () {
     addSlider(layer, 'bgRound', 12);
 
     var sh = comp.layers.addShape();
-    sh.name = nm(NAMES.bg);
+    sh.name = uniqueName(comp, layer.name + ' - ' + M('Fondo', 'Background'));
+    sh.comment = 'AUTOSUBBG:' + st.id;
     sh.startTime = 0; sh.inPoint = 0; sh.outPoint = comp.duration;
     var tr = sh.property('ADBE Transform Group');
     tr.property('ADBE Anchor Point').setValue([0, 0]);
@@ -412,6 +466,8 @@ var AutoSub = (function () {
       var ly = c.layer(i);
       if (ly.hasAudio && ly.audioEnabled) { hasAudio = true; break; }
     }
+    var subs = listSubLayers(c), list = [];
+    for (i = 0; i < subs.length; i++) list.push({ index: subs[i].index, name: subs[i].name, markers: subs[i].property('ADBE Marker').numKeys });
     var sub = findSubLayer(c);
     var store = sub ? readStore(sub) : null;
     return {
@@ -422,11 +478,28 @@ var AutoSub = (function () {
       },
       selected: selected,
       subLayer: sub ? sub.name : null,
+      subIndex: sub ? sub.index : null,
+      subLayers: list,
       subFont: sub ? textDocProp(sub).value.font : null,
       hasWords: !!(store && store.words && store.words.length),
       markerSig: sub ? markerSignature(sub) : '',
       markerCount: sub ? sub.property('ADBE Marker').numKeys : 0,
       savedSettings: store ? store.settings : null
+    };
+  };
+
+  /** Estilo actual de la capa de trabajo: lo muestra la pestana Editar. */
+  api.layerStyle = function (a) {
+    var comp = activeComp(), layer = requireSubLayer(comp, a);
+    var td = textDocProp(layer).value, st = readStore(layer) || {}, s = st.settings || {};
+    var fx = layer.property('ADBE Effect Parade'), shadow = false, i;
+    for (i = 1; i <= fx.numProperties; i++) if (fx.property(i).matchName === 'ADBE Drop Shadow' && fx.property(i).enabled) shadow = true;
+    var bg = bgOf(comp, layer), sc = scaleX(layer), bw = s.boxWidth;
+    try { bw = Math.round(td.boxTextSize[0] * sc); } catch (e) {}
+    return {
+      index: layer.index, name: layer.name, font: td.font, fontSize: Math.round(td.fontSize),
+      boxWidth: bw, maxLines: s.maxLines || 2, stroke: !!td.applyStroke, shadow: shadow,
+      background: !!(bg && bg.enabled), hasWords: !!(st.words && st.words.length)
     };
   };
 
@@ -557,19 +630,24 @@ var AutoSub = (function () {
   /** Crea (o reutiliza) la capa de subtitulos y ajusta la caja: ancho, lineas, tipografia y ancla centrada. */
   api.ensureLayer = function (a) {
     var comp = activeComp();
-    var layer = findSubLayer(comp);
-    if (!layer) layer = createSubLayer(comp, a);
-    else if (!textDocProp(layer).value.boxText) layer = convertLegacy(comp, layer, a);
+    var layer = a.create ? createSubLayer(comp, a) : requireSubLayer(comp, a);
+    if (!a.create && !textDocProp(layer).value.boxText) layer = convertLegacy(comp, layer, a);
     else { setupRig(layer); layoutBox(layer, a); }
     applyStrokeShadow(layer, a);
+    // Recordar en la capa el ancho y las lineas de su caja (los muestra la pestana Editar)
+    var st = readStore(layer) || { v: 1, words: [], settings: {} };
+    st.settings = st.settings || {};
+    if (a.maxLines) st.settings.maxLines = Number(a.maxLines);
+    if (a.boxWidth) st.settings.boxWidth = Number(a.boxWidth);
+    writeStore(layer, st);
     ensureBackground(comp, layer, !!a.background);
-    return { name: layer.name, font: textDocProp(layer).value.font };
+    return { index: layer.index, name: layer.name, font: textDocProp(layer).value.font };
   };
 
   /** Duplicado temporal sin expresion para medir texto con el estilo y la caja de la capa. */
-  function withMeasureLayer(fn) {
+  function withMeasureLayer(a, fn) {
     var comp = activeComp();
-    var layer = requireSubLayer(comp);
+    var layer = requireSubLayer(comp, a);
     var dup = layer.duplicate();
     try {
       dup.enabled = false;
@@ -589,7 +667,7 @@ var AutoSub = (function () {
 
   /** Mide en pixeles de la composicion el ancho de cada palabra con el estilo actual de la capa. */
   api.measure = function (a) {
-    return withMeasureLayer(function (m) {
+    return withMeasureLayer(a, function (m) {
       var out = { widths: {}, space: 0, avgChar: 0 };
       var w2 = m('xx').w;
       out.space = Math.max(1, m('x x').w - w2);
@@ -602,7 +680,7 @@ var AutoSub = (function () {
 
   /** Cuenta cuantas lineas ocupa cada texto dentro de la caja real (verificacion final). */
   api.countLines = function (a) {
-    return withMeasureLayer(function (m) {
+    return withMeasureLayer(a, function (m) {
       var h1 = m('Hg').h, lead = Math.max(1, m('Hg\rHg').h - h1);
       var out = [];
       var texts = a.texts || [];
@@ -633,7 +711,7 @@ var AutoSub = (function () {
   /** Escribe los subtitulos como marcadores y guarda las palabras para reorganizar despues. */
   api.apply = function (a) {
     var comp = activeComp();
-    var layer = requireSubLayer(comp);
+    var layer = requireSubLayer(comp, a);
     var mk = layer.property('ADBE Marker');
     for (var i = mk.numKeys; i >= 1; i--) mk.removeKey(i);
 
@@ -652,26 +730,25 @@ var AutoSub = (function () {
     }
     if (layer.outPoint < comp.duration) layer.outPoint = comp.duration;
 
-    if (a.words) writeStore(layer, { v: 1, words: a.words, settings: a.settings || {} });
-    else {
-      var st = readStore(layer) || { v: 1, words: [] };
-      st.settings = a.settings || st.settings;
-      writeStore(layer, st);
-    }
+    // Se conserva el resto de datos de la capa (su id enlaza la caja de fondo)
+    var st = readStore(layer) || { v: 1, words: [], settings: {} };
+    if (a.words) st.words = a.words;
+    if (a.settings) st.settings = a.settings;
+    writeStore(layer, st);
     return { count: segs.length };
   };
 
   /** Palabras guardadas en la capa. */
-  api.getStore = function () {
+  api.getStore = function (a) {
     var comp = activeComp();
-    var layer = requireSubLayer(comp);
+    var layer = requireSubLayer(comp, a);
     return readStore(layer) || { v: 1, words: [], settings: {} };
   };
 
   /** Lee los subtitulos actuales (marcadores) de la capa. */
-  api.readSubs = function () {
+  api.readSubs = function (a) {
     var comp = activeComp();
-    var layer = requireSubLayer(comp);
+    var layer = requireSubLayer(comp, a);
     var mk = layer.property('ADBE Marker');
     var list = [];
     for (var i = 1; i <= mk.numKeys; i++) {
@@ -684,7 +761,7 @@ var AutoSub = (function () {
 
   /** Reescribe los subtitulos editados en el panel. */
   api.writeSubs = function (a) {
-    return api.apply({ segments: a.subs || [] });
+    return api.apply({ segments: a.subs || [], layer: a.layer });
   };
 
   function toPanelText(c) { return String(c).replace(/\s*\|\s*/g, '\n'); }
@@ -698,7 +775,7 @@ var AutoSub = (function () {
    */
   api.patchSubs = function (a) {
     var comp = activeComp();
-    var layer = requireSubLayer(comp);
+    var layer = requireSubLayer(comp, a);
     var mk = layer.property('ADBE Marker');
     var cur = [], i;
     for (i = 1; i <= mk.numKeys; i++) {
